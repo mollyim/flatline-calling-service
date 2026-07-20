@@ -3938,6 +3938,14 @@ mod call_tests {
                     template_dependency_structure: is_key_frame.then_some(
                         TemplateDependencyStructure::new(TemplateDependencyStructureFields {
                             resolutions: resolution.map(|resolution| [resolution.into()].into()),
+                            decode_target_count: 1,
+                            layers: [rtp::Layer::zero()].into(),
+                            templates: [rtp::Template {
+                                layer: rtp::Layer::zero(),
+                                dtis: [rtp::Dti::Switch].into(),
+                                ..Default::default()
+                            }]
+                            .into(),
                             ..Default::default()
                         }),
                     ),

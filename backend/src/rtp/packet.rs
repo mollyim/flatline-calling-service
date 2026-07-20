@@ -1064,6 +1064,14 @@ impl Packet<Vec<u8>> {
             let template_dependency_structure = Some(TemplateDependencyStructure::new(
                 TemplateDependencyStructureFields {
                     resolutions: resolution.map(|r| [r.into()].into()),
+                    decode_target_count: 1,
+                    layers: [Layer::zero()].into(),
+                    templates: [Template {
+                        layer: Layer::zero(),
+                        dtis: [Dti::Switch].into(),
+                        ..Default::default()
+                    }]
+                    .into(),
                     ..Default::default()
                 },
             ));

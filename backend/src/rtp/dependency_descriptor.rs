@@ -215,8 +215,27 @@ pub struct TemplateDependencyStructure(Arc<TemplateDependencyStructureFields>);
 
 #[cfg(any(test, feature = "load_test"))]
 impl TemplateDependencyStructure {
-    pub fn new(template_dependency_structure: TemplateDependencyStructureFields) -> Self {
-        Self(Arc::new(template_dependency_structure))
+    pub fn new(tds: TemplateDependencyStructureFields) -> Self {
+        assert!(
+            tds.decode_target_count > 0,
+            "template dependency structure must have a non-zero decode_target_count"
+        );
+        assert!(
+            !tds.layers.is_empty(),
+            "template dependency structure must have at least one layer"
+        );
+        assert!(
+            tds.templates.len() == tds.layers.len(),
+            "must have one template for each layer"
+        );
+        for layer in &tds.templates {
+            assert!(
+                layer.dtis.len() == tds.decode_target_count,
+                "each template needs one dtis for each decode target"
+            );
+        }
+
+        Self(Arc::new(tds))
     }
 }
 
@@ -1085,8 +1104,22 @@ mod tests {
     #[test]
     fn valid_template_id() -> anyhow::Result<()> {
         let template = TemplateDependencyStructure::new(TemplateDependencyStructureFields {
+            decode_target_count: 1,
+            layers: [Layer::zero(), Layer::zero()].into(),
             template_id_offset: 4,
-            templates: [Template::default(), Template::default()].into(),
+            templates: [
+                Template {
+                    layer: Layer::zero(),
+                    dtis: [Dti::Switch].into(),
+                    ..Default::default()
+                },
+                Template {
+                    layer: Layer::zero(),
+                    dtis: [Dti::Switch].into(),
+                    ..Default::default()
+                },
+            ]
+            .into(),
             ..Default::default()
         });
         assert!(FrameDependencyDefinition::new(&template, None, 0).is_err());
@@ -1095,8 +1128,22 @@ mod tests {
         assert!(FrameDependencyDefinition::new(&template, None, 6).is_err());
 
         let template = TemplateDependencyStructure::new(TemplateDependencyStructureFields {
+            decode_target_count: 1,
+            layers: [Layer::zero(), Layer::zero()].into(),
             template_id_offset: 0,
-            templates: [Template::default(), Template::default()].into(),
+            templates: [
+                Template {
+                    layer: Layer::zero(),
+                    dtis: [Dti::Switch].into(),
+                    ..Default::default()
+                },
+                Template {
+                    layer: Layer::zero(),
+                    dtis: [Dti::Switch].into(),
+                    ..Default::default()
+                },
+            ]
+            .into(),
             ..Default::default()
         });
         assert!(FrameDependencyDefinition::new(&template, None, 15).is_err());
