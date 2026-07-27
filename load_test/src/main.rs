@@ -124,7 +124,7 @@ fn main() -> Result<()> {
 
     info!("join response {:?}", join_response);
 
-    let demux_id = DemuxId::try_from(join_response.demux_id)?;
+    let my_demux_id = DemuxId::try_from(join_response.demux_id)?;
     let ice_server_ufrag = join_response.ice_ufrag;
     let ice_server_pwd = join_response.ice_pwd.into_bytes();
     let ice_client_pwd = ice_client_pwd.into_bytes();
@@ -142,7 +142,34 @@ fn main() -> Result<()> {
         }
     };
 
-    let server_ip: IpAddr = join_response.ips[0].parse()?;
+    let server_ip: IpAddr = match env::var("IP_VERSION") {
+        Err(VarError::NotPresent) => join_response.ips[0].parse()?,
+        Ok(s) => match s.as_str() {
+            "4" => join_response
+                .ips
+                .iter()
+                .find(|ip| ip.parse().is_ok_and(|ip: IpAddr| ip.is_ipv4()))
+                .ok_or(anyhow!("No ipv4 addreses"))?
+                .parse()?,
+            "6" => join_response
+                .ips
+                .iter()
+                .find(|ip| ip.parse().is_ok_and(|ip: IpAddr| ip.is_ipv6()))
+                .ok_or(anyhow!("No ipv6 addreses"))?
+                .parse()?,
+            _ => {
+                error!("IP_VERSION must be 4 or 6");
+                exit(1)
+            }
+        },
+        Err(e) => {
+            error!(
+                "error when retreiving environment variable IP_VERSION: {}",
+                e
+            );
+            exit(1);
+        }
+    };
     let server_addr = SocketAddr::new(server_ip, join_response.port);
     let bind_addr = if server_ip.is_ipv4() {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)
@@ -176,16 +203,16 @@ fn main() -> Result<()> {
         encrypt,
         now,
         0,
-        call::LayerId::Video0.to_ssrc(demux_id),
+        call::LayerId::Video0.to_ssrc(my_demux_id),
     );
 
     let mut mrp_stream: MrpStream<protos::DeviceToSfu, protos::SfuToDevice> =
         MrpStream::with_capacity_limit(MAX_MRP_WINDOW_SIZE);
 
-    let audio_ssrc = call::LayerId::Audio.to_ssrc(demux_id);
-    let video0_ssrc = call::LayerId::Video0.to_ssrc(demux_id);
-    let video1_ssrc = call::LayerId::Video1.to_ssrc(demux_id);
-    let video2_ssrc = call::LayerId::Video2.to_ssrc(demux_id);
+    let audio_ssrc = call::LayerId::Audio.to_ssrc(my_demux_id);
+    let video0_ssrc = call::LayerId::Video0.to_ssrc(my_demux_id);
+    let video1_ssrc = call::LayerId::Video1.to_ssrc(my_demux_id);
+    let video2_ssrc = call::LayerId::Video2.to_ssrc(my_demux_id);
 
     let video0_size = PixelSize {
         width: 160,
@@ -232,7 +259,7 @@ fn main() -> Result<()> {
 
     // (server randomized) demux_id based sleep so all the test clients don't live in lock step
     sleep(std::time::Duration::from_millis(
-        (u32::from(demux_id) >> 23).into(),
+        (u32::from(my_demux_id) >> 23).into(),
     ));
 
     let scenario: &dyn Scenario = match env::var("SCENARIO") {
@@ -241,6 +268,7 @@ fn main() -> Result<()> {
             "pipunpip" => &PipUnpip::default(),
             "pipunpip_bwlimit" => &PipUnpipBWLimit::default(),
             "unlimited" => &Unlimited::default(),
+            "audio_only" => &AudioOnly::default(),
             s => {
                 error!("unknown scenario: {}", s);
                 exit(1);
@@ -256,7 +284,12 @@ fn main() -> Result<()> {
         }
     };
 
-    info!("using Scenario: {}", scenario.name());
+    let send_video = scenario.send_video();
+    info!(
+        "using Scenario: {}, send_video {}",
+        scenario.name(),
+        send_video
+    );
 
     let mut rate_limiter = RateLimiter::new(Instant::now());
 
@@ -299,7 +332,7 @@ fn main() -> Result<()> {
             }
         }
 
-        if now.saturating_duration_since(last_video_sent) >= VIDEO_INTERVAL {
+        if send_video && now.saturating_duration_since(last_video_sent) >= VIDEO_INTERVAL {
             // Send ~ 30 fps
             // Send 1x ~  400 byte video0 frame  ~ 100kbps
             // Send 1x ~ 1100 byte video1 frame  ~ 300kbps
@@ -379,9 +412,9 @@ fn main() -> Result<()> {
         {
             height_refresh = false;
             if let Some(first) = active_demux_ids.iter().cloned().sorted().next() {
-                if demux_id < first {
+                if my_demux_id < first {
                     if !is_least_demux_id {
-                        error!("lowest demux {} {:?}", process::id(), demux_id);
+                        error!("lowest demux {} {:?}", process::id(), my_demux_id);
                         stats.start(now);
                         last_rate_limit = now - RATE_LIMIT_INTERVAL;
                     }
@@ -391,7 +424,7 @@ fn main() -> Result<()> {
                         error!(
                             "not lowest demux {} {:?} > {:?}",
                             process::id(),
-                            demux_id,
+                            my_demux_id,
                             first
                         );
                     }
@@ -530,6 +563,11 @@ fn main() -> Result<()> {
                             stats.bytes_video += len;
                             stats.video_delay.push(time_diff);
                         } else if packet.is_audio() {
+                            let demux_id = DemuxId::from_ssrc(packet.ssrc());
+                            if !active_demux_ids.contains(&demux_id) {
+                                height_refresh = true;
+                                active_demux_ids.insert(demux_id);
+                            }
                             stats.bytes_audio += len;
                             stats.audio_delay.push(time_diff);
                         } else if packet.ssrc() == CLIENT_SERVER_DATA_SSRC
@@ -847,6 +885,7 @@ trait Scenario {
     fn want_video(&self, is_least_demux_id: bool, seconds: u64) -> WantVideo;
     fn limit_kbps(&self, seconds: u64) -> Option<u64>;
     fn name(&self) -> &str;
+    fn send_video(&self) -> bool;
 }
 
 #[derive(Default)]
@@ -871,6 +910,9 @@ impl Scenario for Periodic {
 
     fn name(&self) -> &str {
         "Periodic"
+    }
+    fn send_video(&self) -> bool {
+        true
     }
 }
 
@@ -897,6 +939,9 @@ impl Scenario for PipUnpip {
 
     fn name(&self) -> &str {
         "PipUnpip"
+    }
+    fn send_video(&self) -> bool {
+        true
     }
 }
 
@@ -931,6 +976,9 @@ impl Scenario for PipUnpipBWLimit {
     fn name(&self) -> &str {
         "PipUnpipBWLimit"
     }
+    fn send_video(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Default)]
@@ -947,6 +995,29 @@ impl Scenario for Unlimited {
 
     fn name(&self) -> &str {
         "Unlimited"
+    }
+    fn send_video(&self) -> bool {
+        true
+    }
+}
+
+#[derive(Default)]
+struct AudioOnly {}
+
+impl Scenario for AudioOnly {
+    fn want_video(&self, _is_least_demux_id: bool, _seconds: u64) -> WantVideo {
+        WantVideo::None
+    }
+
+    fn limit_kbps(&self, _seconds: u64) -> Option<u64> {
+        None
+    }
+
+    fn name(&self) -> &str {
+        "AudioOnly"
+    }
+    fn send_video(&self) -> bool {
+        false
     }
 }
 
