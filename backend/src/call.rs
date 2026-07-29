@@ -2647,7 +2647,7 @@ impl CallInner {
             Err(e) => {
                 error!(
                     "Failed to compute endorsements for call {} due to: {}",
-                    &call_info.loggable_call_id, e
+                    call_info.loggable_call_id, e
                 );
                 None
             }

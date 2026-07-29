@@ -677,11 +677,9 @@ impl RtcpReportSender {
         let lost_since_last = self
             .cumulative_loss
             .saturating_sub(self.cumulative_loss_in_last);
-        let fraction_lost_since_last = if expected_since_last == 0 {
-            0
-        } else {
-            (256 * lost_since_last / expected_since_last) as u8
-        };
+        let fraction_lost_since_last = (256 * lost_since_last)
+            .checked_div(expected_since_last)
+            .unwrap_or(0) as u8;
 
         // Negative cumulative loss isn't supported because it can cause problems with WebRTC
         // https://source.chromium.org/chromium/chromium/src/+/main:third_party/webrtc/modules/rtp_rtcp/source/receive_statistics_impl.h;l=91-94;drc=18649971ab02d2f3fc8f360aee2e3c573652b7bd

@@ -127,8 +127,8 @@ impl std::fmt::Display for ConnectionId {
         write!(
             f,
             "call_id: {}, demux_id: {}",
-            &LoggableCallId::from(&self.call_id),
-            &self.demux_id.as_u32()
+            LoggableCallId::from(&self.call_id),
+            self.demux_id.as_u32()
         )
     }
 }

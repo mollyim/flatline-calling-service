@@ -1074,7 +1074,7 @@ impl IdentityFetcher {
 
             debug!(
                 "Successfully wrote identity token to {:?}",
-                &self.identity_token_path
+                self.identity_token_path
             );
         }
         Ok(())

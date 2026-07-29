@@ -1054,28 +1054,26 @@ impl TcpState {
             return Err(io::Error::from(io::ErrorKind::InvalidData));
         }
         if self.size == 0 {
-            match self.stream.read(&mut self.buf[self.pos..2]) {
-                Ok(read) => {
-                    if read == 0 {
+            {
+                let read = self.stream.read(&mut self.buf[self.pos..2])?;
+                if read == 0 {
+                    return Err(io::Error::from(io::ErrorKind::InvalidData));
+                }
+                self.pos += read;
+                match self.pos.cmp(&2) {
+                    Ordering::Less => (),
+                    Ordering::Equal => {
+                        self.size = BigEndian::read_u16(&self.buf[0..2]) as usize;
+                        self.pos = 0;
+                    }
+                    Ordering::Greater => {
+                        error!(
+                            "read more than asked for, self.pos {}, read {}",
+                            self.pos, read
+                        );
                         return Err(io::Error::from(io::ErrorKind::InvalidData));
                     }
-                    self.pos += read;
-                    match self.pos.cmp(&2) {
-                        Ordering::Less => (),
-                        Ordering::Equal => {
-                            self.size = BigEndian::read_u16(&self.buf[0..2]) as usize;
-                            self.pos = 0;
-                        }
-                        Ordering::Greater => {
-                            error!(
-                                "read more than asked for, self.pos {}, read {}",
-                                self.pos, read
-                            );
-                            return Err(io::Error::from(io::ErrorKind::InvalidData));
-                        }
-                    }
                 }
-                Err(err) => return Err(err),
             }
         }
         if self.size > MAX_RTP_LENGTH {
@@ -1086,28 +1084,26 @@ impl TcpState {
             event!("calling.udp.epoll.tcp_too_large");
             return Err(io::Error::from(io::ErrorKind::InvalidData));
         } else if self.size != 0 {
-            match self.stream.read(&mut self.buf[self.pos..self.size]) {
-                Ok(read) => {
-                    if read == 0 {
-                        return Err(io::Error::from(io::ErrorKind::InvalidData));
-                    }
-                    self.pos += read;
-                    if self.pos == self.size {
-                        let size = self.size;
-                        buf[0..self.pos].copy_from_slice(&self.buf[0..self.pos]);
-                        self.size = 0;
-                        self.pos = 0;
-                        return Ok((
-                            size,
-                            SocketLocator::Tcp {
-                                id: self.id,
-                                is_ipv6: self.is_ipv6,
-                                is_tls: self.is_tls,
-                            },
-                        ));
-                    }
+            {
+                let read = self.stream.read(&mut self.buf[self.pos..self.size])?;
+                if read == 0 {
+                    return Err(io::Error::from(io::ErrorKind::InvalidData));
                 }
-                Err(err) => return Err(err),
+                self.pos += read;
+                if self.pos == self.size {
+                    let size = self.size;
+                    buf[0..self.pos].copy_from_slice(&self.buf[0..self.pos]);
+                    self.size = 0;
+                    self.pos = 0;
+                    return Ok((
+                        size,
+                        SocketLocator::Tcp {
+                            id: self.id,
+                            is_ipv6: self.is_ipv6,
+                            is_tls: self.is_tls,
+                        },
+                    ));
+                }
             }
         }
         Err(io::Error::from(io::ErrorKind::WouldBlock))

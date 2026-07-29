@@ -164,8 +164,8 @@ pub struct Endpoint {
     rtx_sender: RtxSender,
 
     // For Endpoint stats
-    last_stats_calculated_time: Instant,
-    last_stats: Option<EndpointStats>,
+    last_stats_calculated_time: Option<Instant>,
+    last_stats: EndpointStats,
 }
 
 struct IncomingSsrcState {
@@ -192,7 +192,7 @@ impl Default for IncomingSsrcState {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct EndpointStats {
     pub remembered_packet_count: usize,
     pub remembered_packet_bytes: usize,
@@ -237,8 +237,8 @@ impl Endpoint {
 
             rtx_sender: RtxSender::new(PACKET_LIFETIME),
 
-            last_stats: None,
-            last_stats_calculated_time: now,
+            last_stats: EndpointStats::default(),
+            last_stats_calculated_time: None,
         }
     }
 
@@ -713,12 +713,10 @@ impl Endpoint {
     }
 
     pub fn get_or_update_stats(&mut self, now: Instant) -> &EndpointStats {
-        // destructuring here causes wrong lifetimes (https://github.com/rust-lang/rust/issues/54663)
-        if self.last_stats.is_some()
-            && now.saturating_duration_since(self.last_stats_calculated_time)
-                < RTT_ESTIMATE_AGE_LIMIT
-        {
-            return self.last_stats.as_ref().unwrap();
+        if let Some(calculated_time) = self.last_stats_calculated_time {
+            if now.saturating_duration_since(calculated_time) < RTT_ESTIMATE_AGE_LIMIT {
+                return &self.last_stats;
+            }
         }
 
         self.update_stats(now)
@@ -728,14 +726,14 @@ impl Endpoint {
         let (remembered_packet_count, remembered_packet_bytes) =
             self.rtx_sender.remembered_packet_stats();
 
-        self.last_stats = Some(EndpointStats {
+        self.last_stats = EndpointStats {
             remembered_packet_count,
             remembered_packet_bytes,
             rtt_estimate: self.calculate_rtt(now),
-        });
-        self.last_stats_calculated_time = now;
+        };
+        self.last_stats_calculated_time = Some(now);
 
-        self.last_stats.as_ref().unwrap()
+        &self.last_stats
     }
 
     /// Average RTT estimates across all SSRCS that are not too old.

@@ -131,47 +131,38 @@ fn main() -> Result<()> {
         increase_nofile_limit(rlimit::INFINITY).expect("should be able to set RLIMIT_NOFILE");
     info!("FD limit: {}", fd_limit);
 
-    let tls_config = if !config.ice_candidate_port_tls.is_empty()
-        && config.hostname.is_some()
-        && config.certificate_file_path.is_some()
-        && config.key_file_path.is_some()
-    {
-        let certificates = CertificateDer::pem_reader_iter(&mut File::open(
-            config
-                .certificate_file_path
-                .as_ref()
-                .expect("must have a certificate file path"),
-        )?)
-        .collect::<Result<Vec<_>, _>>()?;
-        let private_key = PrivateKeyDer::from_pem_reader(&mut File::open(
-            config
-                .key_file_path
-                .as_ref()
-                .expect("must have a key file path"),
-        )?)
-        .expect("must have a private key");
+    let tls_config = match (
+        config.ice_candidate_port_tls.is_empty(),
+        config.hostname.as_ref(),
+        config.certificate_file_path.as_ref(),
+        config.key_file_path.as_ref(),
+    ) {
+        (false, Some(_hostname), Some(certificate_file_path), Some(key_file_path)) => {
+            let certificates =
+                CertificateDer::pem_reader_iter(&mut File::open(certificate_file_path)?)
+                    .collect::<Result<Vec<_>, _>>()?;
 
-        let mut tls_config = ServerConfig::builder_with_provider(Arc::new(
-            rustls::crypto::aws_lc_rs::default_provider(),
-        ))
-        .with_protocol_versions(&[&TLS13])?
-        .with_no_client_auth()
-        .with_single_cert(certificates, private_key)?;
-        // Explicitly disable TLS sessions and tickets, WebRTC does not use them, so don't waste bandwidth
-        tls_config.session_storage = Arc::new(NoServerSessionStorage {});
-        tls_config.max_early_data_size = 0;
-        tls_config.send_tls13_tickets = 0;
+            let private_key = PrivateKeyDer::from_pem_reader(&mut File::open(key_file_path)?)
+                .expect("must have a private key");
 
-        Some(Arc::new(tls_config))
-    } else {
-        if !config.ice_candidate_port_tls.is_empty()
-            || config.hostname.is_some()
-            || config.certificate_file_path.is_some()
-            || config.key_file_path.is_some()
-        {
+            let mut tls_config = ServerConfig::builder_with_provider(Arc::new(
+                rustls::crypto::aws_lc_rs::default_provider(),
+            ))
+            .with_protocol_versions(&[&TLS13])?
+            .with_no_client_auth()
+            .with_single_cert(certificates, private_key)?;
+
+            // Explicitly disable TLS sessions and tickets, WebRTC does not use them, so don't waste bandwidth
+            tls_config.session_storage = Arc::new(NoServerSessionStorage {});
+            tls_config.max_early_data_size = 0;
+            tls_config.send_tls13_tickets = 0;
+
+            Some(Arc::new(tls_config))
+        }
+        (true, None, None, None) => None,
+        _ => {
             panic!("For TLS, all values must be set: ice-candidate-port-tls, hostname, certificate-file-path, key-file-path");
         }
-        None
     };
 
     let csel_opts = &config.candidate_selector_options;

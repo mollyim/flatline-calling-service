@@ -64,18 +64,19 @@ impl GoogleToken {
                 Ok(()) => {
                     self.fetch_start = now;
                     self.backoff = Self::INITIAL_BACKOFF;
-                    Ok(self.token.as_ref().unwrap())
                 }
                 Err(err) if self.token.is_some() => {
                     warn!("failed to refresh Google token: {}", err);
                     self.double_backoff();
-                    Ok(self.token.as_ref().unwrap())
                 }
-                Err(err) => Err(err),
+                Err(err) => return Err(err),
             }
-        } else {
-            Ok(self.token.as_ref().unwrap())
         }
+
+        Ok(self
+            .token
+            .as_deref()
+            .expect("token should have been set above"))
     }
 
     async fn fetch(&mut self, client: reqwest::Client) -> Result<()> {

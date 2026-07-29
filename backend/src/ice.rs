@@ -16,7 +16,6 @@ use calling_common::{
 };
 use crc::{Crc, CRC_32_ISO_HDLC};
 use hmac::{Hmac, Mac};
-use log::*;
 use sha1::Sha1;
 use thiserror::Error;
 

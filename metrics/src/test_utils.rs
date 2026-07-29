@@ -16,8 +16,8 @@ where
     V: PartialEq + Debug + Copy,
 {
     let mut actual: Vec<(K, V)> = actual.into_iter().collect::<Vec<_>>();
-    actual.sort_unstable_by(|(k1, _), (k2, _)| k1.cmp(k2));
-    expected.sort_unstable_by(|(k1, _), (k2, _)| k1.cmp(k2));
+    actual.sort_unstable_by_key(|(k1, _)| *k1);
+    expected.sort_unstable_by_key(|(k1, _)| *k1);
     assert_eq!(actual, expected);
 }
 

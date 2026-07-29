@@ -8,7 +8,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use calling_common::RoomId;
 use hex::ToHex;
-use log::*;
 use reqwest::Url;
 use serde::Serialize;
 

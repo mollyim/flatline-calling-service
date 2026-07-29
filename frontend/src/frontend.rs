@@ -161,7 +161,7 @@ impl Frontend {
                 let active_clients = response
                     .user_ids
                     .into_iter()
-                    .zip(response.demux_ids.into_iter())
+                    .zip(response.demux_ids)
                     .map(|(user_id, raw_demux_id)| {
                         anyhow::Ok(ClientInfo {
                             opaque_user_id: Some(user_id),

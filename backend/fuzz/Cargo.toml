@@ -18,7 +18,7 @@ anyhow = "1.0.100"
 arbitrary = "1.4.1"
 hex-literal = "0.4.1"
 libfuzzer-sys = "0.4.9"
-rand = "0.8.5"
+rand = "0.8.6"
 
 [dependencies.calling_common]
 path = "../../common"
