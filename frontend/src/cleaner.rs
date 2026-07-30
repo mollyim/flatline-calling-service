@@ -11,7 +11,7 @@ use futures::future::join_all;
 use log::*;
 use metrics::{event, metric_config::Timer, start_timer_us};
 use parking_lot::Mutex;
-use rand::{thread_rng, Rng};
+use rand::RngExt;
 use tokio::sync::{oneshot::Receiver, Semaphore};
 
 use crate::{
@@ -72,7 +72,7 @@ pub async fn start(config: &'static config::Config, ender_rx: Receiver<()>) -> R
         loop {
             // Add up to 5% delay on the cleanup interval
             // so that instances started simultaneously don't try to clean simultaneously.
-            let jitter = (cleanup_interval / 100) * thread_rng().gen_range(0..=5);
+            let jitter = (cleanup_interval / 100) * rand::rng().random_range(0..=5);
 
             // Use sleep() instead of interval() so that we never wait *less* than one
             // interval to do the next tick.

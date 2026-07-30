@@ -13,7 +13,7 @@ use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use calling_common::RoomId;
 use hex::FromHex;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use metrics::event;
 use sha2::Sha256;
 use subtle::ConstantTimeEq;

@@ -681,7 +681,7 @@ mod tests {
     };
 
     use calling_common::{Duration, Instant};
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{rngs::StdRng, RngExt, SeedableRng};
 
     use super::{CandidateSelector, Config, RttEstimator, ScoringValues, PING_MAX_RETRANSMITS};
     use crate::{
@@ -766,11 +766,11 @@ mod tests {
         }
 
         fn should_drop_packet(&mut self) -> bool {
-            self.rnd.gen_bool(self.packet_loss_percentage)
+            self.rnd.random_bool(self.packet_loss_percentage)
         }
 
         fn generate_rtt(&self) -> Duration {
-            Duration::from_millis(rand::thread_rng().gen_range(self.rtt_range.clone()))
+            Duration::from_millis(rand::rng().random_range(self.rtt_range.clone()))
         }
 
         fn push(&mut self, packet: PacketToSend, now: Instant) {

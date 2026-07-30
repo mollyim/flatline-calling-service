@@ -32,7 +32,7 @@ pub use counters::*;
 pub use data_rate::*;
 pub use integers::*;
 pub use math::*;
-use rand::{thread_rng, Rng};
+use rand::RngExt;
 pub use serialize::*;
 pub use slice::*;
 pub use time::*;
@@ -107,10 +107,10 @@ mod parse_tests {
 pub fn random_hex_string(n: usize) -> String {
     const HEXCHARSET: &[u8] = b"abcdef0123456789";
 
-    let mut rng = thread_rng();
+    let mut rng = rand::rng();
     let string: String = (0..n)
         .map(|_| {
-            let index = rng.gen_range(0..HEXCHARSET.len());
+            let index = rng.random_range(0..HEXCHARSET.len());
             HEXCHARSET[index] as char
         })
         .collect();
@@ -120,7 +120,7 @@ pub fn random_hex_string(n: usize) -> String {
 /// Const generic expressions may replace this in future, but for now we must have a macro
 macro_rules! random_base64_string_of_length {
     ($string_length:expr) => {{
-        STANDARD.encode(thread_rng().gen::<[u8; $string_length * 6 / 8]>())
+        STANDARD.encode(rand::rng().random::<[u8; $string_length * 6 / 8]>())
     }};
 }
 

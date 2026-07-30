@@ -42,7 +42,7 @@ use hkdf::Hkdf;
 use itertools::Itertools;
 use mrp::{self, MrpStream};
 use prost::Message;
-use rand::rngs::OsRng;
+use rand::{rand_core::UnwrapErr, rngs::SysRng};
 use sha2::Sha256;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
@@ -89,7 +89,7 @@ fn main() -> Result<()> {
     let uri = format!("{}/v2/conference/participants", url);
     let ice_client_ufrag = ice::random_ufrag();
     let ice_client_pwd = ice::random_pwd();
-    let client_secret = EphemeralSecret::random_from_rng(OsRng);
+    let client_secret = EphemeralSecret::random_from_rng(&mut UnwrapErr(SysRng));
     let client_dhe_public_key = PublicKey::from(&client_secret).to_bytes();
     let hkdf_extra_info = [0u8; 0];
 

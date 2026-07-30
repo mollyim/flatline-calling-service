@@ -9,8 +9,8 @@ use std::{
     ops::Range,
 };
 
-use aes::cipher::{generic_array::GenericArray, KeyInit};
-use aes_gcm::{AeadInPlace, Aes128Gcm};
+use aes::cipher::KeyInit;
+use aes_gcm::{AeadInOut, Aes128Gcm};
 use anyhow::{anyhow, Result};
 use calling_common::{
     parse_u16, parse_u32, round_up_to_multiple_of, CheckedSplitAt, DataRate, DataSize, Instant,
@@ -702,10 +702,11 @@ impl<T: BorrowMut<[u8]>> Packet<T> {
     pub fn decrypt_in_place(&mut self, key: &Key, salt: &Salt) -> Option<()> {
         assert!(self.encrypted, "Can't decrypt an unencrypted packet");
         let (cipher, nonce, aad, ciphertext, tag) = self.prepare_for_crypto(key, salt);
-        let nonce = GenericArray::from_slice(&nonce);
-        let tag = GenericArray::from_slice(tag);
+        let tag: &[u8; SRTP_AUTH_TAG_LEN] = (&*tag)
+            .try_into()
+            .expect("tag is SRTP_AUTH_TAG_LEN by construction");
         cipher
-            .decrypt_in_place_detached(nonce, aad, ciphertext, tag)
+            .decrypt_inout_detached((&nonce).into(), aad, ciphertext.into(), tag.into())
             .ok()?;
         self.encrypted = false;
         Some(())
@@ -716,9 +717,8 @@ impl<T: BorrowMut<[u8]>> Packet<T> {
     pub fn encrypt_in_place(&mut self, key: &Key, salt: &Salt) -> Option<()> {
         assert!(!self.encrypted, "Can't encrypt an already encrypted packet");
         let (cipher, nonce, aad, plaintext, tag) = self.prepare_for_crypto(key, salt);
-        let nonce = GenericArray::from_slice(&nonce);
         let computed_tag = cipher
-            .encrypt_in_place_detached(nonce, aad, plaintext)
+            .encrypt_inout_detached((&nonce).into(), aad, plaintext.into())
             .ok()?;
         tag.copy_from_slice(&computed_tag);
         self.encrypted = true;
@@ -738,7 +738,7 @@ impl<T: BorrowMut<[u8]>> Packet<T> {
         let (header, payload_plus_tag) = self.serialized.borrow_mut().split_at_mut(header_len);
         let (payload, tag) = payload_plus_tag.split_at_mut(payload_len);
         let iv = rtp_iv(ssrc, seqnum, salt);
-        let cipher = Aes128Gcm::new(GenericArray::from_slice(&key[..]));
+        let cipher = Aes128Gcm::new((&**key).into());
         (cipher, iv, header, payload, tag)
     }
 

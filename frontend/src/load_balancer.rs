@@ -7,7 +7,7 @@ use std::{collections::HashMap, net::Ipv4Addr};
 
 use anyhow::{anyhow, Result};
 use log::*;
-use rand::{thread_rng, Rng};
+use rand::RngExt;
 use reqwest::StatusCode;
 use serde::Deserialize;
 use tokio::{
@@ -249,8 +249,8 @@ impl LoadBalancerTask {
                     h.weight_left = h.weight.unwrap_or(0);
                 }
             }
-            let mut rng = thread_rng();
-            let mut n = rng.gen_range(0..self.total_weight_left);
+            let mut rng = rand::rng();
+            let mut n = rng.random_range(0..self.total_weight_left);
             for (ipv4, h) in self.map.iter_mut() {
                 if n < h.weight_left.into() {
                     h.weight_left -= 1;

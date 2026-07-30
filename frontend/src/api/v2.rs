@@ -429,7 +429,7 @@ pub mod api_server_v2_tests {
     use base64::{engine::general_purpose::STANDARD, Engine};
     use calling_common::{CallLinkEpoch, DemuxId, RoomId};
     use hex::{FromHex, ToHex};
-    use hmac::Mac;
+    use hmac::{KeyInit, Mac};
     use http::{header, Request};
     use mockall::{predicate::*, Sequence};
     use once_cell::sync::Lazy;

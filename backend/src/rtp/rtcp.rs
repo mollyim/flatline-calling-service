@@ -8,8 +8,8 @@ use std::{
     ops::{Range, RangeInclusive},
 };
 
-use aes::cipher::{generic_array::GenericArray, KeyInit};
-use aes_gcm::{AeadInPlace, Aes128Gcm};
+use aes::cipher::KeyInit;
+use aes_gcm::{AeadInOut, Aes128Gcm};
 use calling_common::{
     parse_u16, parse_u24, parse_u32, parse_u64, round_up_to_multiple_of, CheckedSplitAt, Duration,
     Instant, Writable, Writer, U24,
@@ -86,10 +86,11 @@ impl<'packet> ControlPacket<'packet> {
         if encrypted {
             let (cipher, nonce, aad, ciphertext, tag) =
                 Self::prepare_for_crypto(serialized, sender_ssrc, srtcp_index, key, salt)?;
-            let nonce = GenericArray::from_slice(&nonce);
-            let tag = GenericArray::from_slice(tag);
+            let tag: &[u8; SRTP_AUTH_TAG_LEN] = (&*tag)
+                .try_into()
+                .expect("tag is SRTP_AUTH_TAG_LEN by construction");
             cipher
-                .decrypt_in_place_detached(nonce, &aad, ciphertext, tag)
+                .decrypt_inout_detached((&nonce).into(), &aad, ciphertext.into(), tag.into())
                 .ok()?;
         } else {
             // Allow processing unencrypted packets when fuzzing;
@@ -211,9 +212,8 @@ impl<'packet> ControlPacket<'packet> {
             .copy_from_slice(&(srtcp_index | 0x80000000/* "encrypted" */).to_be_bytes());
         let (cipher, nonce, aad, plaintext, tag) =
             Self::prepare_for_crypto(&mut packet, sender_ssrc, srtcp_index, key, salt)?;
-        let nonce = GenericArray::from_slice(&nonce);
         let computed_tag = cipher
-            .encrypt_in_place_detached(nonce, &aad, plaintext)
+            .encrypt_inout_detached((&nonce).into(), &aad, plaintext.into())
             .ok()?;
         tag.copy_from_slice(&computed_tag);
         Some(packet)
@@ -302,7 +302,7 @@ impl ControlPacket<'_> {
             payload_plus_tag.split_at_mut(payload_plus_tag.len() - SRTP_AUTH_TAG_LEN);
         let iv = rtcp_iv(sender_ssrc, srtcp_index, salt)?;
 
-        let cipher = Aes128Gcm::new(GenericArray::from_slice(&key[..]));
+        let cipher = Aes128Gcm::new((&**key).into());
         let aad = [header, footer].concat();
         Some((cipher, iv, aad, payload, tag))
     }

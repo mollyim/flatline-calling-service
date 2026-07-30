@@ -296,7 +296,7 @@ mod tests {
     };
 
     use mock_instant::MockClock;
-    use rand::Rng;
+    use rand::RngExt;
 
     use crate::{
         metric_config::StaticStrTagsRef,
@@ -458,7 +458,7 @@ mod tests {
     });
 
     fn random_tags() -> StaticStrTagsRef {
-        TAG_SET.get(rand::thread_rng().gen_range(0..(TAG_SET.len() + 1)))
+        TAG_SET.get(rand::rng().random_range(0..(TAG_SET.len() + 1)))
     }
 
     #[test]

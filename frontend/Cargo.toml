@@ -16,7 +16,7 @@ calling_common = { path = "../common" }
 metrics = { path = "../metrics" }
 
 # For error handling
-anyhow = "1.0.100"
+anyhow = "1.0.104"
 thiserror = "2.0.17"
 
 # For logging and command line operations
@@ -39,9 +39,9 @@ serde_with = { version = "3.16.1", features = ["base64"] }
 urlencoding = "2.1.3"
 
 # For common and authentication
-rand = "0.8.5"
-sha2 = "0.10.9"
-hmac = "0.12.1"
+rand = "0.10.2"
+sha2 = "0.11.0"
+hmac = "0.13.0"
 subtle = "2.6.1"
 
 # For http client and server
@@ -60,7 +60,11 @@ aws-credential-types = { version = "1.2.11", features = [
 aws-smithy-types = "1.3.5"
 aws-smithy-async = "1.2.7"
 aws-config = "1.8.12"
-aws-sdk-dynamodb = "1.101.0"
+# The default "rustls" feature adds a legacy hyper 0.14 / rustls 0.21 client we don't use.
+aws-sdk-dynamodb = { version = "1.101.0", default-features = false, features = [
+  "default-https-client",
+  "rt-tokio",
+] }
 serde_dynamo = { version = "4.3.0", features = ["aws-sdk-dynamodb+1"] }
 
 # For metrics
@@ -70,11 +74,11 @@ rlimit = "0.10.2"
 
 # For the call link credentials
 bincode = "1.3.3"
-zkgroup = { git = "https://github.com/signalapp/libsignal", tag = "v0.93.1" }
+zkgroup = { git = "https://github.com/signalapp/libsignal", tag = "v0.99.1" }
 
 [dev-dependencies]
-libsignal-core = { git = "https://github.com/signalapp/libsignal", tag = "v0.93.1" }
-mockall = "0.13.1"
+libsignal-core = { git = "https://github.com/signalapp/libsignal", tag = "v0.99.1" }
+mockall = "0.15.0"
 lazy_static = "1.5.0"
 
 [features]

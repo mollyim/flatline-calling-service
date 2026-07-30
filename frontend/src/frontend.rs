@@ -12,7 +12,7 @@ use log::*;
 #[cfg(test)]
 use mockall::{automock, predicate::*};
 use parking_lot::Mutex;
-use rand::Rng;
+use rand::RngExt;
 use urlencoding::encode;
 
 use crate::{
@@ -36,7 +36,7 @@ pub struct FrontendIdGenerator;
 
 impl IdGenerator for FrontendIdGenerator {
     fn get_random_demux_id(&self, _user_id: &str) -> DemuxId {
-        let unmasked_id = rand::thread_rng().gen::<u32>();
+        let unmasked_id = rand::rng().random::<u32>();
         DemuxId::try_from(unmasked_id & !0b1111).expect("valid")
     }
 

@@ -25,7 +25,7 @@ use metrics::{
 };
 use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
-use rand::rngs::OsRng;
+use rand::{rand_core::UnwrapErr, rngs::SysRng};
 use sha2::Sha256;
 use strum::IntoEnumIterator;
 use thiserror::Error;
@@ -753,7 +753,7 @@ impl Sfu {
         // video base layer, so use that.
         let ack_ssrc = call::LayerId::Video0.to_ssrc(demux_id);
 
-        let server_secret = EphemeralSecret::random_from_rng(OsRng);
+        let server_secret = EphemeralSecret::random_from_rng(&mut UnwrapErr(SysRng));
         let server_dhe_public_key = PublicKey::from(&server_secret).to_bytes();
         let shared_secret = server_secret.diffie_hellman(&PublicKey::from(client_dhe_public_key));
         let mut srtp_master_key_material = new_master_key_material();
@@ -1472,7 +1472,7 @@ mod sfu_tests {
 
     use hex::FromHex;
     use once_cell::sync::Lazy;
-    use rand::{thread_rng, Rng};
+    use rand::RngExt;
 
     use super::*;
 
@@ -1480,9 +1480,9 @@ mod sfu_tests {
 
     fn random_byte_vector(n: usize) -> Vec<u8> {
         let mut numbers: Vec<u8> = Vec::new();
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         for _ in 0..n {
-            numbers.push(rng.gen());
+            numbers.push(rng.random());
         }
         numbers
     }

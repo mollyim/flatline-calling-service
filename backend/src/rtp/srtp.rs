@@ -6,7 +6,7 @@
 use std::convert::TryInto;
 
 use aes::{
-    cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit},
+    cipher::{BlockCipherEncrypt, KeyInit},
     Aes128,
 };
 use zeroize::Zeroizing;
@@ -87,11 +87,11 @@ impl KeysAndSalts {
     }
 
     fn derive_key_from_master(master: &KeyAndSalt, label: u8) -> Key {
-        let cipher = Aes128::new(GenericArray::from_slice(&master.key[..]));
+        let cipher = Aes128::new((&*master.key).into());
         let mut derived = Zeroizing::new([0; SRTP_KEY_LEN]);
         derived[..SRTP_SALT_LEN].copy_from_slice(&master.salt);
         derived[7] ^= label;
-        cipher.encrypt_block(GenericArray::from_mut_slice(&mut derived[..]));
+        cipher.encrypt_block((&mut *derived).into());
         derived
     }
 
@@ -177,7 +177,7 @@ pub fn new_srtp_keys(seed: u8) -> (KeysAndSalts, KeysAndSalts) {
 
 #[cfg(test)]
 mod test {
-    use rand::{thread_rng, Rng};
+    use rand::RngExt;
 
     use super::{super::types::*, *};
 
@@ -206,11 +206,11 @@ mod test {
             ]
         }
 
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         for _ in 0..100 {
-            let ssrc = rng.gen();
-            let seqnum = rng.gen::<u64>() & 0x0000_FFFF_FFFF_FFFF; // 48 bits only
-            let salt = rng.gen();
+            let ssrc = rng.random();
+            let seqnum = rng.random::<u64>() & 0x0000_FFFF_FFFF_FFFF; // 48 bits only
+            let salt = rng.random();
 
             assert_eq!(
                 reference(ssrc, seqnum, &salt),

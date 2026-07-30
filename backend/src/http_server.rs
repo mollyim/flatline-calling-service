@@ -22,7 +22,7 @@ use axum_extra::{
 use calling_common::{CallType, DemuxId, SignalUserAgent, SystemTime};
 use hex::{FromHex, ToHex};
 use log::*;
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot::Receiver;
 use tower::ServiceBuilder;
@@ -116,7 +116,7 @@ mod metrics {
 }
 
 pub fn random_demux_id() -> DemuxId {
-    let unmasked_id = rand::thread_rng().gen::<u32>();
+    let unmasked_id = rand::rng().random::<u32>();
     DemuxId::try_from(unmasked_id & !0b1111).expect("valid")
 }
 
@@ -437,7 +437,7 @@ mod http_server_tests {
     use calling_common::random_hex_string;
     use hex::{FromHex, ToHex};
     use once_cell::sync::Lazy;
-    use rand::{thread_rng, Rng};
+    use rand::RngExt;
 
     static CONFIG: Lazy<config::Config> = Lazy::new(config::default_test_config);
 
@@ -453,9 +453,9 @@ mod http_server_tests {
 
     fn random_byte_vector(n: usize) -> Vec<u8> {
         let mut numbers: Vec<u8> = Vec::new();
-        let mut rng = thread_rng();
+        let mut rng = rand::rng();
         for _ in 0..n {
-            numbers.push(rng.gen());
+            numbers.push(rng.random());
         }
         numbers
     }

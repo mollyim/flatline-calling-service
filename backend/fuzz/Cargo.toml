@@ -14,11 +14,11 @@ edition = "2018"
 cargo-fuzz = true
 
 [dependencies]
-anyhow = "1.0.100"
-arbitrary = "1.4.1"
+anyhow = "1.0.104"
+arbitrary = "1.4.2"
 hex-literal = "0.4.1"
-libfuzzer-sys = "0.4.9"
-rand = "0.8.6"
+libfuzzer-sys = "0.4.10"
+rand = "0.10.2"
 
 [dependencies.calling_common]
 path = "../../common"
@@ -65,8 +65,3 @@ name = "dependency-descriptor"
 path = "fuzz_targets/dependency_descriptor.rs"
 test = false
 doc = false
-
-# keep in sync with workspace patches
-[patch.crates-io]
-# Use our fork of curve25519-dalek because we're using zkgroup.
-curve25519-dalek = { git = 'https://github.com/signalapp/curve25519-dalek', tag = 'signal-curve25519-4.1.3' }

@@ -294,7 +294,7 @@ mod estimate_acked_rates_from_groups_tests {
     use std::cmp::Ordering;
 
     use calling_common::AbsDiff;
-    use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
+    use rand::{rngs::StdRng, RngExt, SeedableRng};
 
     use super::*;
 
@@ -365,10 +365,10 @@ mod estimate_acked_rates_from_groups_tests {
     fn direction_follows_samples() {
         let seed: u64 = match std::env::var("RANDOM_SEED") {
             Ok(v) => v.parse().unwrap(),
-            Err(_) => thread_rng().gen(),
+            Err(_) => rand::rng().random(),
         };
         let mut rng = StdRng::seed_from_u64(seed);
-        let rates: Vec<_> = std::iter::from_fn(move || Some(rng.gen_range(0..100_000)))
+        let rates: Vec<_> = std::iter::from_fn(move || Some(rng.random_range(0..100_000)))
             .take(10_000)
             .collect();
         let stream = estimate_acked_rates_from_groups(size_groups_from_bps(rates.clone()));

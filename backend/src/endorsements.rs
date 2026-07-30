@@ -12,7 +12,7 @@ use std::{
 use calling_common::{Duration, SystemTime};
 use itertools::Itertools;
 use parking_lot::Mutex;
-use rand::Rng;
+use rand::RngExt;
 use thiserror::Error;
 use zkgroup::{
     groups::{GroupSendEndorsementsResponse, UuidCiphertext},
@@ -92,8 +92,8 @@ impl EndorsementIssuer {
         member_ciphertexts: Vec<UuidCiphertext>,
         expiration: SystemTime,
     ) -> GroupSendEndorsementsResponse {
-        let rng = &mut rand::thread_rng();
-        let randomness: RandomnessBytes = rng.gen();
+        let rng = &mut rand::rng();
+        let randomness: RandomnessBytes = rng.random();
         let key_pair = self
             .expiration_to_key_cache
             .entry(expiration)

@@ -1110,7 +1110,7 @@ impl DelayDirectionPipeline {
 
 #[cfg(test)]
 mod calculate_delay_directions_from_slopes_tests {
-    use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
+    use rand::{rngs::StdRng, RngExt, SeedableRng};
 
     use super::*;
 
@@ -1331,7 +1331,7 @@ mod calculate_delay_directions_from_slopes_tests {
             let gaussian = rand_distr::Normal::new(0.005, arrival_std_dev.as_secs_f64()).unwrap();
             let seed: u64 = match std::env::var("RANDOM_SEED") {
                 Ok(v) => v.parse().unwrap(),
-                Err(_) => thread_rng().gen(),
+                Err(_) => rand::rng().random(),
             };
             let rng = StdRng::seed_from_u64(seed);
             Self { gaussian, rng }
