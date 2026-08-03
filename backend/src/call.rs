@@ -8,7 +8,7 @@ use std::{
     collections::{HashMap, HashSet},
     convert::{From, TryFrom},
     fmt::{self, Display, Formatter},
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
 
 use bincode::Options;
@@ -22,7 +22,6 @@ use log::*;
 use metrics::metric_config::Timer;
 use mrp::{self, MrpReceiveError, MrpStream};
 use nonzero_ext::nonzero;
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use prost::Message;
 use reqwest::Url;
@@ -154,8 +153,8 @@ impl From<usize> for CallSizeBucket {
 
 // Compute custom tags for Per-Call metrics to avoid allocating new tag vectors
 // These tags contain the "call-type" and "call-size" tags
-pub static CALL_TAG_VALUES: Lazy<HashMap<(CallType, CallSizeBucket), Vec<&str>>> =
-    Lazy::new(|| {
+pub static CALL_TAG_VALUES: LazyLock<HashMap<(CallType, CallSizeBucket), Vec<&str>>> =
+    LazyLock::new(|| {
         CallSizeBucket::iter()
             .flat_map(|call_size| {
                 CallType::iter().map(move |call_type| {

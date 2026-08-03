@@ -7,8 +7,13 @@
 
 use core::ops::DerefMut;
 use std::{
-    cmp::min, collections::HashMap, convert::TryInto, fmt::Write, ops::AddAssign, str::FromStr,
-    sync::Arc,
+    cmp::min,
+    collections::HashMap,
+    convert::TryInto,
+    fmt::Write,
+    ops::AddAssign,
+    str::FromStr,
+    sync::{Arc, LazyLock},
 };
 
 use anyhow::Result;
@@ -23,7 +28,6 @@ use metrics::{
     metric_config::{Histogram, StaticStrTagsRef, Timer},
     *,
 };
-use once_cell::sync::Lazy;
 use parking_lot::{Mutex, RwLock};
 use rand::{rand_core::UnwrapErr, rngs::SysRng};
 use sha2::Sha256;
@@ -381,24 +385,25 @@ impl Sfu {
         type ValueMap = HashMap<StaticStrTagsRef, f32>;
         // Compute custom tags for Per-Connection metrics to avoid allocating new tag vectors
         // These tags contain every combo of the "call-size", "region-relation", and "user-agent" tag
-        static CONNECTION_TAG_VALUES: Lazy<HashMap<ConnectionTags, Vec<&str>>> = Lazy::new(|| {
-            CALL_TAG_VALUES
-                .iter()
-                .flat_map(|(&(call_type, call_size_key), call_tags)| {
-                    RegionRelation::iter().flat_map(move |relation| {
-                        SignalUserAgent::iter().map(move |user_agent| {
-                            let key = (call_type, call_size_key, relation, user_agent);
-                            let mut tags = call_tags.clone();
-                            tags.push(relation.as_tag());
-                            tags.push(user_agent.as_tag());
-                            (key, tags)
+        static CONNECTION_TAG_VALUES: LazyLock<HashMap<ConnectionTags, Vec<&str>>> =
+            LazyLock::new(|| {
+                CALL_TAG_VALUES
+                    .iter()
+                    .flat_map(|(&(call_type, call_size_key), call_tags)| {
+                        RegionRelation::iter().flat_map(move |relation| {
+                            SignalUserAgent::iter().map(move |user_agent| {
+                                let key = (call_type, call_size_key, relation, user_agent);
+                                let mut tags = call_tags.clone();
+                                tags.push(relation.as_tag());
+                                tags.push(user_agent.as_tag());
+                                (key, tags)
+                            })
                         })
                     })
-                })
-                .collect()
-        });
+                    .collect()
+            });
 
-        static CALL_TAG_ZERO_GAUGE: Lazy<ValueMap> = Lazy::new(|| {
+        static CALL_TAG_ZERO_GAUGE: LazyLock<ValueMap> = LazyLock::new(|| {
             CALL_TAG_VALUES
                 .iter()
                 .map(|(&_, call_tags)| (Some(call_tags), 0.0))
@@ -1471,7 +1476,6 @@ mod sfu_tests {
     };
 
     use hex::FromHex;
-    use once_cell::sync::Lazy;
     use rand::RngExt;
 
     use super::*;
@@ -1496,7 +1500,7 @@ mod sfu_tests {
         config
     }
 
-    static DEFAULT_CONFIG: Lazy<config::Config> = Lazy::new(config::default_test_config);
+    static DEFAULT_CONFIG: LazyLock<config::Config> = LazyLock::new(config::default_test_config);
 
     fn new_sfu(now: Instant, config: &'static config::Config) -> Arc<Sfu> {
         Arc::new(Sfu::new(now, config).expect("Sfu::new should be working"))
@@ -1812,8 +1816,8 @@ mod sfu_tests {
     const TICK_PERIOD_MS: u64 = 100;
     const INACTIVITY_TIMEOUT_SECS: u64 = 30;
 
-    static CUSTOM_CONFIG: Lazy<config::Config> =
-        Lazy::new(|| custom_config(TICK_PERIOD_MS, INACTIVITY_TIMEOUT_SECS));
+    static CUSTOM_CONFIG: LazyLock<config::Config> =
+        LazyLock::new(|| custom_config(TICK_PERIOD_MS, INACTIVITY_TIMEOUT_SECS));
 
     #[tokio::test]
     async fn test_remove_clients() {

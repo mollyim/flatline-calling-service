@@ -26,7 +26,6 @@ clap = { version = "4.5.53", features = ["derive"] }
 
 # For runtime and threading
 tokio = { version = "1.48.0", features = ["rt-multi-thread", "signal", "macros"] }
-once_cell = "1.21.3"
 futures = "0.3.31"
 async-trait = "0.1.89"
 
@@ -79,7 +78,6 @@ zkgroup = { git = "https://github.com/signalapp/libsignal", tag = "v0.99.1" }
 [dev-dependencies]
 libsignal-core = { git = "https://github.com/signalapp/libsignal", tag = "v0.99.1" }
 mockall = "0.15.0"
-lazy_static = "1.5.0"
 
 [features]
 testing = []

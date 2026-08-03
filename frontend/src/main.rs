@@ -6,7 +6,10 @@
 #[macro_use]
 extern crate log;
 
-use std::{env, sync::Arc};
+use std::{
+    env,
+    sync::{Arc, LazyLock},
+};
 
 use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -27,7 +30,6 @@ use calling_frontend::{
 };
 use clap::Parser;
 use env_logger::Env;
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use rlimit::increase_nofile_limit;
 use tokio::{
@@ -37,7 +39,7 @@ use tokio::{
 };
 
 // Load the config and treat it as a read-only static value.
-static CONFIG: Lazy<config::Config> = Lazy::new(config::Config::parse);
+static CONFIG: LazyLock<config::Config> = LazyLock::new(config::Config::parse);
 const MONITOR_DEADLOCK_INTERVAL: Duration = Duration::from_secs(5);
 
 #[rustfmt::skip]

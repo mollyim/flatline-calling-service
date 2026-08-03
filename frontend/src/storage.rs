@@ -1201,7 +1201,7 @@ mod tests {
 
     #[cfg(feature = "storage-tests")]
     mod test_operations {
-        use std::{collections::HashSet, future::Future, process::Command};
+        use std::{collections::HashSet, future::Future, process::Command, sync::LazyLock};
 
         use aws_sdk_dynamodb::{
             error::SdkError,
@@ -1209,8 +1209,6 @@ mod tests {
         };
         use base64::{engine::general_purpose::STANDARD, Engine};
         use futures::FutureExt;
-        use lazy_static::lazy_static;
-        use once_cell::sync::Lazy;
 
         use super::*;
         use crate::{
@@ -1218,13 +1216,11 @@ mod tests {
             config::default_test_config,
         };
 
-        lazy_static! {
-            static ref DYNAMODB_STATUS: std::process::ExitStatus = start_dynamodb();
-        }
+        static DYNAMODB_STATUS: LazyLock<std::process::ExitStatus> = LazyLock::new(start_dynamodb);
 
-        static TESTING_EXPIRATION: Lazy<SystemTime> =
-            Lazy::new(|| SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(2524608000)); // 2050-01-01
-        static TESTING_DELETE_AT: Lazy<SystemTime> = Lazy::new(|| {
+        static TESTING_EXPIRATION: LazyLock<SystemTime> =
+            LazyLock::new(|| SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(2524608000)); // 2050-01-01
+        static TESTING_DELETE_AT: LazyLock<SystemTime> = LazyLock::new(|| {
             SystemTime::UNIX_EPOCH
                 + std::time::Duration::from_secs(2524608000)
                 + CallLinkState::DELETION_TIMER

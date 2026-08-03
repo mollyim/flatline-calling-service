@@ -164,9 +164,9 @@ impl Metrics {
 #[macro_export]
 macro_rules! reporter {
     ($name:expr, $options:expr) => {{
-        static __REPORTER: once_cell::sync::Lazy<
+        static __REPORTER: std::sync::LazyLock<
             std::sync::Arc<$crate::metric_config::NumericValueReporter>,
-        > = once_cell::sync::Lazy::new(|| {
+        > = std::sync::LazyLock::new(|| {
             $crate::__METRICS.create_and_register_timer($name, $options)
         });
 
@@ -177,9 +177,9 @@ macro_rules! reporter {
 #[macro_export]
 macro_rules! value_histogram_reporter {
     ($name:expr) => {{
-        static __VALUE_HISTOGRAM: once_cell::sync::Lazy<
+        static __VALUE_HISTOGRAM: std::sync::LazyLock<
             std::sync::Arc<$crate::metric_config::ValueHistogramReporter>,
-        > = once_cell::sync::Lazy::new(|| {
+        > = std::sync::LazyLock::new(|| {
             $crate::__METRICS.create_and_register_value_histogram($name)
         });
 
@@ -200,9 +200,9 @@ macro_rules! value_histogram {
 #[macro_export]
 macro_rules! event_reporter {
     ($name:expr) => {{
-        static __REPORTER: once_cell::sync::Lazy<
+        static __REPORTER: std::sync::LazyLock<
             std::sync::Arc<$crate::metric_config::EventCountReporter>,
-        > = once_cell::sync::Lazy::new(|| $crate::__METRICS.create_and_register_event($name));
+        > = std::sync::LazyLock::new(|| $crate::__METRICS.create_and_register_event($name));
 
         &__REPORTER
     }};

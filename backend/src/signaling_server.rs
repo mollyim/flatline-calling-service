@@ -489,12 +489,13 @@ fn start_monitor(mut ender_rx: Receiver<()>, cpu_idle_pct: Arc<AtomicU8>) {
 
 #[cfg(test)]
 mod signaling_server_tests {
+    use std::sync::LazyLock;
+
     use axum::{
         body::Body,
         http::{self, Request},
     };
     use calling_common::{ClientStatus, DemuxId, Instant};
-    use once_cell::sync::Lazy;
     use tokio::sync::oneshot;
     use tower::ServiceExt;
 
@@ -516,10 +517,10 @@ mod signaling_server_tests {
     const UFRAG: &str = "Ouub";
     const PWD: &str = "Ouub";
 
-    static DEFAULT_CONFIG: Lazy<config::Config> = Lazy::new(config::default_test_config);
+    static DEFAULT_CONFIG: LazyLock<config::Config> = LazyLock::new(config::default_test_config);
 
     // Load a config with no signaling_ip set.
-    static BAD_IP_CONFIG: Lazy<config::Config> = Lazy::new(|| {
+    static BAD_IP_CONFIG: LazyLock<config::Config> = LazyLock::new(|| {
         let mut config = config::default_test_config();
         config.signaling_ip = None;
         config

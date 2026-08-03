@@ -8,7 +8,7 @@ extern crate log;
 
 use std::{
     fs::File,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{atomic::AtomicBool, Arc, LazyLock},
 };
 
 use anyhow::Result;
@@ -18,7 +18,6 @@ use calling_backend::{
 use calling_common::{DataRate, Duration, Instant};
 use clap::Parser;
 use env_logger::Env;
-use once_cell::sync::Lazy;
 use rlimit::increase_nofile_limit;
 use rustls::{
     pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer},
@@ -33,7 +32,7 @@ use tokio::{
 };
 
 // Load the config and treat it as a read-only static value.
-static CONFIG: Lazy<config::Config> = Lazy::new(config::Config::parse);
+static CONFIG: LazyLock<config::Config> = LazyLock::new(config::Config::parse);
 const MONITOR_DEADLOCK_INTERVAL: Duration = Duration::from_secs(5);
 
 #[rustfmt::skip]

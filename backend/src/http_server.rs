@@ -436,14 +436,13 @@ pub async fn start(
 
 #[cfg(test)]
 mod http_server_tests {
-    use std::time::Instant;
+    use std::{sync::LazyLock, time::Instant};
 
     use calling_common::random_hex_string;
     use hex::{FromHex, ToHex};
-    use once_cell::sync::Lazy;
     use rand::RngExt;
 
-    static CONFIG: Lazy<config::Config> = Lazy::new(config::default_test_config);
+    static CONFIG: LazyLock<config::Config> = LazyLock::new(config::default_test_config);
 
     use super::*;
 

@@ -5,7 +5,7 @@
 
 use std::{
     ops::{Deref, DerefMut},
-    sync::Arc,
+    sync::{Arc, LazyLock},
     time::Duration,
 };
 
@@ -15,7 +15,6 @@ use metrics::{
     metric_config::{Client as DatadogClient, *},
     *,
 };
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use psutil::process::Process;
 use tokio::sync::oneshot::Receiver;
@@ -219,8 +218,8 @@ fn get_value_metrics(fd_limit: usize) -> Vec<(&'static str, f32)> {
 fn get_process_metrics(fd_limit: usize) -> Vec<(&'static str, f32)> {
     let mut value_metrics = Vec::new();
 
-    static CURRENT_PROCESS: Lazy<Mutex<Process>> =
-        Lazy::new(|| Mutex::new(Process::current().expect("Can't get current process")));
+    static CURRENT_PROCESS: LazyLock<Mutex<Process>> =
+        LazyLock::new(|| Mutex::new(Process::current().expect("Can't get current process")));
 
     let mut current_process = CURRENT_PROCESS.lock();
 

@@ -609,13 +609,14 @@ pub async fn reset_call_link_approvals(
 
 #[cfg(test)]
 pub mod tests {
+    use std::sync::LazyLock;
+
     use axum::body::Body;
     use base64::{engine::general_purpose::STANDARD, Engine};
     use calling_common::Duration;
     use hex::FromHex;
     use http::{header, Request};
     use mockall::predicate::*;
-    use once_cell::sync::Lazy;
     use tower::ServiceExt;
     use zkgroup::call_links::{
         CallLinkAuthCredentialResponse, CallLinkSecretParams,
@@ -653,25 +654,25 @@ pub mod tests {
     const DISTANT_FUTURE_DELETE_AT_IN_EPOCH_SECONDS: u64 =
         4133980800 + storage::CallLinkState::DELETION_TIMER.as_secs();
 
-    static DISTANT_FUTURE: Lazy<SystemTime> = Lazy::new(|| {
+    static DISTANT_FUTURE: LazyLock<SystemTime> = LazyLock::new(|| {
         SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(DISTANT_FUTURE_IN_EPOCH_SECONDS)
     });
 
-    static DISTANT_FUTURE_DELETE_AT: Lazy<SystemTime> = Lazy::new(|| {
+    static DISTANT_FUTURE_DELETE_AT: LazyLock<SystemTime> = LazyLock::new(|| {
         SystemTime::UNIX_EPOCH
             + std::time::Duration::from_secs(DISTANT_FUTURE_IN_EPOCH_SECONDS)
             + storage::CallLinkState::DELETION_TIMER
     });
 
-    static CONFIG: Lazy<config::Config> = Lazy::new(|| {
+    static CONFIG: LazyLock<config::Config> = LazyLock::new(|| {
         initialize_logging();
         let mut config = config::default_test_config();
         config.authentication_key = AUTH_KEY.to_string();
         config
     });
 
-    static CALL_LINK_SECRET_PARAMS: Lazy<CallLinkSecretParams> =
-        Lazy::new(|| CallLinkSecretParams::derive_from_root_key(b"testing"));
+    static CALL_LINK_SECRET_PARAMS: LazyLock<CallLinkSecretParams> =
+        LazyLock::new(|| CallLinkSecretParams::derive_from_root_key(b"testing"));
 
     fn initialize_logging() {
         let _ = env_logger::Builder::from_env(

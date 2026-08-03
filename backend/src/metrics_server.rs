@@ -5,7 +5,7 @@
 
 use std::{
     ops::{Deref, DerefMut},
-    sync::Arc,
+    sync::{Arc, LazyLock},
     time::Duration,
 };
 
@@ -20,7 +20,6 @@ use metrics::{
     },
     metrics, time_scope_us,
 };
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use psutil::process::Process;
 use tokio::sync::oneshot::Receiver;
@@ -34,8 +33,8 @@ use crate::{
 #[global_allocator]
 static GLOBAL_ALLOCATOR: AccountingAlloc = AccountingAlloc::new();
 
-static CURRENT_PROCESS: Lazy<Mutex<Process>> =
-    Lazy::new(|| Mutex::new(Process::current().expect("Can't get current process")));
+static CURRENT_PROCESS: LazyLock<Mutex<Process>> =
+    LazyLock::new(|| Mutex::new(Process::current().expect("Can't get current process")));
 
 pub async fn start(
     config: &'static config::Config,
