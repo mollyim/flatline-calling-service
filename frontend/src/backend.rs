@@ -108,6 +108,12 @@ pub struct JoinResponse {
     pub port_tcp: u16,
     #[serde(rename = "serverPortTls", default)]
     pub port_tls: Option<u16>,
+    #[serde(rename = "serverUdpAddresses", default)]
+    pub udp_addresses: Vec<SocketAddr>,
+    #[serde(rename = "serverTcpAddresses", default)]
+    pub tcp_addresses: Vec<SocketAddr>,
+    #[serde(rename = "serverTlsAddresses", default)]
+    pub tls_addresses: Vec<SocketAddr>,
     #[serde(rename = "serverHostname", default)]
     pub hostname: Option<String>,
     #[serde(rename = "serverIceUfrag")]

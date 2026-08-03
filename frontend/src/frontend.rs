@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use std::{convert::TryFrom, fmt::Write};
+use std::{convert::TryFrom, fmt::Write, net::SocketAddr};
 
 use anyhow::{anyhow, Error, Result};
 use calling_common::{random_hex_string, CallType, DemuxId, RoomId, SignalUserAgent};
@@ -64,6 +64,9 @@ pub struct JoinResponseWrapper {
     pub port_tcp: u16,
     pub port_tls: Option<u16>,
     pub hostname: Option<String>,
+    pub udp_addresses: Vec<SocketAddr>,
+    pub tcp_addresses: Vec<SocketAddr>,
+    pub tls_addresses: Vec<SocketAddr>,
     pub ips: Vec<String>,
     pub ice_ufrag: String,
     pub ice_pwd: String,
@@ -324,6 +327,9 @@ impl Frontend {
             port_tcp: backend_join_response.port_tcp,
             port_tls: backend_join_response.port_tls,
             ips: backend_join_response.ips,
+            udp_addresses: backend_join_response.udp_addresses,
+            tcp_addresses: backend_join_response.tcp_addresses,
+            tls_addresses: backend_join_response.tls_addresses,
             hostname: backend_join_response.hostname,
             ice_ufrag: backend_join_response.ice_ufrag,
             ice_pwd: backend_join_response.ice_pwd,

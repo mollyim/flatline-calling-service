@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use std::{str, sync::Arc, time::SystemTime};
+use std::{net::SocketAddr, str, sync::Arc, time::SystemTime};
 
 use anyhow::Result;
 use axum::{
@@ -74,6 +74,9 @@ pub struct JoinResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub port_tls: Option<u16>,
     pub ips: Vec<String>,
+    pub udp_addresses: Vec<SocketAddr>,
+    pub tcp_addresses: Vec<SocketAddr>,
+    pub tls_addresses: Vec<SocketAddr>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
     pub ice_ufrag: String,
@@ -410,6 +413,9 @@ pub async fn join(
         port_tcp: response.port_tcp,
         port_tls: response.port_tls,
         ips: response.ips,
+        udp_addresses: response.udp_addresses,
+        tcp_addresses: response.tcp_addresses,
+        tls_addresses: response.tls_addresses,
         hostname: response.hostname,
         ice_ufrag: response.ice_ufrag,
         ice_pwd: response.ice_pwd,
@@ -423,7 +429,11 @@ pub async fn join(
 
 #[cfg(test)]
 pub mod api_server_v2_tests {
-    use std::{str, time::SystemTime};
+    use std::{
+        net::{IpAddr, Ipv4Addr},
+        str,
+        time::SystemTime,
+    };
 
     use axum::body::Body;
     use base64::{engine::general_purpose::STANDARD, Engine};
@@ -480,6 +490,9 @@ pub mod api_server_v2_tests {
     const ROOM_ID: &str = "ff0000dd";
     const EPOCH: u32 = 0x0000c350;
     const CALL_LINK_ROOM_ID: &str = "adhoc:ff0000dd";
+
+    const EXAMPLE_SOCKET_ADDR: SocketAddr =
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
 
     static CONFIG: Lazy<config::Config> = Lazy::new(|| {
         let mut config = config::default_test_config();
@@ -959,6 +972,9 @@ pub mod api_server_v2_tests {
                     ips: vec!["127.0.0.1".to_string()],
                     port: 8080,
                     port_tcp: 8080,
+                    udp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tcp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tls_addresses: vec![],
                     ice_ufrag: BACKEND_ICE_UFRAG.to_string(),
                     ice_pwd: BACKEND_ICE_PWD.to_string(),
                     dhe_public_key: BACKEND_DHE_PUBLIC_KEY.to_string(),
@@ -1069,6 +1085,9 @@ pub mod api_server_v2_tests {
                     ips: vec!["127.0.0.1".to_string()],
                     port: 8080,
                     port_tcp: 8080,
+                    udp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tcp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tls_addresses: vec![],
                     ice_ufrag: BACKEND_ICE_UFRAG.to_string(),
                     ice_pwd: BACKEND_ICE_PWD.to_string(),
                     dhe_public_key: BACKEND_DHE_PUBLIC_KEY.to_string(),
@@ -2543,6 +2562,9 @@ pub mod api_server_v2_tests {
                     ips: vec!["127.0.0.1".to_string()],
                     port: 8080,
                     port_tcp: 8080,
+                    udp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tcp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tls_addresses: vec![],
                     ice_ufrag: BACKEND_ICE_UFRAG.to_string(),
                     ice_pwd: BACKEND_ICE_PWD.to_string(),
                     dhe_public_key: BACKEND_DHE_PUBLIC_KEY.to_string(),
@@ -2678,6 +2700,9 @@ pub mod api_server_v2_tests {
                     ips: vec!["127.0.0.1".to_string()],
                     port: 8080,
                     port_tcp: 8080,
+                    udp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tcp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tls_addresses: vec![],
                     ice_ufrag: BACKEND_ICE_UFRAG.to_string(),
                     ice_pwd: BACKEND_ICE_PWD.to_string(),
                     dhe_public_key: BACKEND_DHE_PUBLIC_KEY.to_string(),
@@ -2814,6 +2839,9 @@ pub mod api_server_v2_tests {
                     ips: vec!["127.0.0.1".to_string()],
                     port: 8080,
                     port_tcp: 8080,
+                    udp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tcp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tls_addresses: vec![],
                     ice_ufrag: BACKEND_ICE_UFRAG.to_string(),
                     ice_pwd: BACKEND_ICE_PWD.to_string(),
                     dhe_public_key: BACKEND_DHE_PUBLIC_KEY.to_string(),
@@ -2923,6 +2951,9 @@ pub mod api_server_v2_tests {
                     ips: vec!["127.0.0.1".to_string()],
                     port: 8080,
                     port_tcp: 8080,
+                    udp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tcp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tls_addresses: vec![],
                     ice_ufrag: BACKEND_ICE_UFRAG.to_string(),
                     ice_pwd: BACKEND_ICE_PWD.to_string(),
                     dhe_public_key: BACKEND_DHE_PUBLIC_KEY.to_string(),
@@ -3033,6 +3064,9 @@ pub mod api_server_v2_tests {
                     ips: vec!["127.0.0.1".to_string()],
                     port: 8080,
                     port_tcp: 8080,
+                    udp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tcp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tls_addresses: vec![],
                     ice_ufrag: BACKEND_ICE_UFRAG.to_string(),
                     ice_pwd: BACKEND_ICE_PWD.to_string(),
                     dhe_public_key: BACKEND_DHE_PUBLIC_KEY.to_string(),
@@ -3247,6 +3281,9 @@ pub mod api_server_v2_tests {
                     ips: vec!["127.0.0.1".to_string()],
                     port: 8080,
                     port_tcp: 8080,
+                    udp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tcp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tls_addresses: vec![],
                     ice_ufrag: BACKEND_ICE_UFRAG.to_string(),
                     ice_pwd: BACKEND_ICE_PWD.to_string(),
                     dhe_public_key: BACKEND_DHE_PUBLIC_KEY.to_string(),
@@ -3358,6 +3395,9 @@ pub mod api_server_v2_tests {
                     ips: vec!["127.0.0.1".to_string()],
                     port: 8080,
                     port_tcp: 8080,
+                    udp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tcp_addresses: vec![EXAMPLE_SOCKET_ADDR],
+                    tls_addresses: vec![],
                     ice_ufrag: BACKEND_ICE_UFRAG.to_string(),
                     ice_pwd: BACKEND_ICE_PWD.to_string(),
                     dhe_public_key: BACKEND_DHE_PUBLIC_KEY.to_string(),

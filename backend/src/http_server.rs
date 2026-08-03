@@ -68,8 +68,10 @@ pub struct JoinResponse {
     pub port: u16,
     pub port_tcp: u16,
     pub port_tls: Option<u16>,
-    pub ip: String,
     pub ips: Vec<String>,
+    pub udp_addresses: Vec<SocketAddr>,
+    pub tcp_addresses: Vec<SocketAddr>,
+    pub tls_addresses: Vec<SocketAddr>,
     pub hostname: Option<String>,
     pub ice_ufrag: String,
     pub ice_pwd: String,
@@ -356,12 +358,14 @@ async fn join_conference(
                 port: media_server.ports.udp,
                 port_tcp: media_server.ports.tcp,
                 port_tls: media_server.ports.tls,
-                ip: media_server.ip().to_string(),
                 ips: media_server
                     .addresses
                     .iter()
                     .map(|ip| ip.to_string())
                     .collect(),
+                udp_addresses: media_server.socketaddrs.udp,
+                tcp_addresses: media_server.socketaddrs.tcp,
+                tls_addresses: media_server.socketaddrs.tls,
                 hostname: media_server.hostname,
                 ice_ufrag: server_ice_ufrag,
                 ice_pwd: server_ice_pwd,

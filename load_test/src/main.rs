@@ -142,21 +142,19 @@ fn main() -> Result<()> {
         }
     };
 
-    let server_ip: IpAddr = match env::var("IP_VERSION") {
-        Err(VarError::NotPresent) => join_response.ips[0].parse()?,
+    let server_addr = match env::var("IP_VERSION") {
+        Err(VarError::NotPresent) => join_response.udp_addresses[0],
         Ok(s) => match s.as_str() {
-            "4" => join_response
-                .ips
+            "4" => *join_response
+                .udp_addresses
                 .iter()
-                .find(|ip| ip.parse().is_ok_and(|ip: IpAddr| ip.is_ipv4()))
-                .ok_or(anyhow!("No ipv4 addreses"))?
-                .parse()?,
-            "6" => join_response
-                .ips
+                .find(|ip| ip.is_ipv4())
+                .ok_or(anyhow!("No ipv4 addreses"))?,
+            "6" => *join_response
+                .udp_addresses
                 .iter()
-                .find(|ip| ip.parse().is_ok_and(|ip: IpAddr| ip.is_ipv6()))
-                .ok_or(anyhow!("No ipv6 addreses"))?
-                .parse()?,
+                .find(|ip| ip.is_ipv6())
+                .ok_or(anyhow!("No ipv6 addreses"))?,
             _ => {
                 error!("IP_VERSION must be 4 or 6");
                 exit(1)
@@ -170,8 +168,7 @@ fn main() -> Result<()> {
             exit(1);
         }
     };
-    let server_addr = SocketAddr::new(server_ip, join_response.port);
-    let bind_addr = if server_ip.is_ipv4() {
+    let bind_addr = if server_addr.is_ipv4() {
         SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)
     } else {
         SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0)

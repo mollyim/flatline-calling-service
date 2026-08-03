@@ -111,12 +111,14 @@ pub struct JoinRequest {
 #[derive(Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct JoinResponse {
-    pub server_ip: String,
     pub server_ips: Vec<String>,
     pub server_port: u16,
     pub server_port_tcp: u16,
     pub server_port_tls: Option<u16>,
     pub server_hostname: Option<String>,
+    pub server_udp_addresses: Vec<SocketAddr>,
+    pub server_tcp_addresses: Vec<SocketAddr>,
+    pub server_tls_addresses: Vec<SocketAddr>,
     pub server_ice_ufrag: String,
     pub server_ice_pwd: String,
     pub server_dhe_public_key: String,
@@ -348,7 +350,6 @@ async fn join(
             let server_dhe_public_key = server_dhe_public_key.encode_hex();
 
             let response = JoinResponse {
-                server_ip: media_server.ip().to_string(),
                 server_ips: media_server
                     .addresses
                     .iter()
@@ -357,6 +358,9 @@ async fn join(
                 server_port: media_server.ports.udp,
                 server_port_tcp: media_server.ports.tcp,
                 server_port_tls: media_server.ports.tls,
+                server_udp_addresses: media_server.socketaddrs.udp,
+                server_tcp_addresses: media_server.socketaddrs.tcp,
+                server_tls_addresses: media_server.socketaddrs.tls,
                 server_hostname: media_server.hostname,
                 server_ice_ufrag,
                 server_ice_pwd,
@@ -1209,7 +1213,7 @@ mod signaling_server_tests {
             .await
             .unwrap();
         let response: JoinResponse = serde_json::from_slice(&body).unwrap();
-        assert_eq!(response.server_ip, "127.0.0.1");
+        assert_eq!(response.server_ips, vec!["127.0.0.1"]);
         assert_eq!(response.server_port, 10000);
         assert_eq!(64, response.server_dhe_public_key.len());
         assert_eq!(ClientStatus::Active.to_string(), response.client_status);

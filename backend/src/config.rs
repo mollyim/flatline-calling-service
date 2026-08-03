@@ -5,7 +5,7 @@
 
 //! Configuration options for the calling backend.
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use clap;
 
@@ -225,10 +225,18 @@ pub struct MediaPorts {
     pub tls: Option<u16>,
 }
 
+#[derive(Debug, Clone)]
+pub struct MediaAddrs {
+    pub udp: Vec<SocketAddr>,
+    pub tcp: Vec<SocketAddr>,
+    pub tls: Vec<SocketAddr>,
+}
+
 pub struct ServerMediaAddress {
     pub addresses: Vec<IpAddr>,
     pub ports: MediaPorts,
     pub hostname: Option<String>,
+    pub socketaddrs: MediaAddrs,
 }
 
 /// Public address of the server for media/UDP/TCP/TLS derived from the configuration.
@@ -247,12 +255,17 @@ impl ServerMediaAddress {
             config.ice_candidate_ip.clone()
         };
         Self {
-            addresses,
+            socketaddrs: MediaAddrs {
+                udp: Self::socket_addrs(&addresses, &config.ice_candidate_port),
+                tcp: Self::socket_addrs(&addresses, &config.ice_candidate_port_tcp),
+                tls: Self::socket_addrs(&addresses, &config.ice_candidate_port_tls),
+            },
             ports: MediaPorts {
                 udp: config.ice_candidate_port[0],
                 tcp: config.ice_candidate_port_tcp[0],
                 tls: config.ice_candidate_port_tls.first().copied(),
             },
+            addresses,
             hostname: config.hostname.clone(),
         }
     }
@@ -261,6 +274,13 @@ impl ServerMediaAddress {
         self.addresses
             .first()
             .expect("addresses should be non-empty")
+    }
+
+    fn socket_addrs(addrs: &[IpAddr], ports: &[u16]) -> Vec<SocketAddr> {
+        addrs
+            .iter()
+            .flat_map(|ip| ports.iter().map(|port| SocketAddr::new(*ip, *port)))
+            .collect()
     }
 }
 
