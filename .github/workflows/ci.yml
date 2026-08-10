@@ -38,3 +38,5 @@ jobs:
       run: cargo test
     - name: Dynamic Config tests
       run: cargo test -p calling_common dynamic_config --features=dynamic_config
+    - name: Storage tests
+      run: cargo test --features=storage-tests -- --test-threads=1
