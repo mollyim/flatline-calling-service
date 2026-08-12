@@ -1003,11 +1003,17 @@ impl Storage for DynamoDb {
         room_id: &RoomId,
         approved_users: Vec<UserId>,
     ) -> Result<(), CallLinkUpdateError> {
+        let room_key = AttributeValue::S(call_link_room_key(room_id));
         let request = self
             .client
             .update_item()
+            .set_expression_attribute_values(Some(HashMap::from([(
+                ":room_key".to_string(),
+                room_key.clone(),
+            )])))
+            .condition_expression(format!("{ROOM_ID_KEY} = :room_key"))
             .table_name(&self.table_name)
-            .key(ROOM_ID_KEY, AttributeValue::S(call_link_room_key(room_id)))
+            .key(ROOM_ID_KEY, room_key)
             .key(
                 RECORD_TYPE_KEY,
                 AttributeValue::S(CallLinkState::RECORD_TYPE.to_string()),
@@ -2060,6 +2066,32 @@ mod tests {
                 },
             )
             .await
+        }
+
+        #[tokio::test]
+        async fn test_update_call_link_nonexist() -> Result<()> {
+            let storage = bootstrap_storage().await?;
+            let room_id = format!("testing-room-{}", line!());
+            let epoch = StaticCallLinkEpochGenerator::GENERATED_EPOCH;
+            let bad_room_id = format!("testing-bad-room-{}", line!());
+            std::assert_matches!(
+                with_db_items(
+                    &storage,
+                    [default_call_link_state_json(&room_id, epoch)],
+                    [],
+                    async {
+                        storage
+                            .update_call_link_approved_users(
+                                &RoomId::from(bad_room_id.clone()),
+                                vec!["me".to_string()],
+                            )
+                            .await
+                    }
+                )
+                .await,
+                Err(CallLinkUpdateError::RoomDoesNotExist)
+            );
+            Ok(())
         }
 
         #[tokio::test]
