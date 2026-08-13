@@ -667,12 +667,15 @@ impl Storage for DynamoDb {
             .await
             .context("failed to query storage")?;
 
-        Ok(response.items.and_then(|items| {
-            items
-                .into_iter()
-                .next()
-                .map(|item| from_item(item).expect("failed to convert item to CallLinkState"))
-        }))
+        response
+            .items
+            .and_then(|items| items.into_iter().next().map(from_item))
+            .transpose()
+            .map_err(|e| {
+                StorageError::UnexpectedError(
+                    anyhow::Error::from(e).context("failed to convert item to CallLinkState"),
+                )
+            })
     }
 
     /// Updates some or all of a call link's attributes.
@@ -1251,15 +1254,15 @@ mod tests {
 
         fn default_call_link_state_json_without_epoch(room_id: &str) -> serde_json::Value {
             serde_json::json!({
-            ROOM_ID_KEY: {"S": call_link_room_key_str(room_id)},
-            RECORD_TYPE_KEY: {"S": CallLinkState::RECORD_TYPE},
-            "adminPasskey": {"B": STANDARD.encode([1, 2, 3])},
-            "zkparams": {"B": ""},
-            "restrictions": {"S": "adminApproval"},
-            "encryptedName": {"B": STANDARD.encode(b"abc")},
-            "revoked": {"BOOL": false},
-            "expiration": {"N": timestamp_to_string(*TESTING_EXPIRATION)},
-            "deleteAt": {"N": timestamp_to_string(*TESTING_DELETE_AT)},
+                ROOM_ID_KEY: {"S": call_link_room_key_str(room_id)},
+                RECORD_TYPE_KEY: {"S": CallLinkState::RECORD_TYPE},
+                "adminPasskey": {"B": STANDARD.encode([1, 2, 3])},
+                "zkparams": {"B": ""},
+                "restrictions": {"S": "adminApproval"},
+                "encryptedName": {"B": STANDARD.encode(b"abc")},
+                "revoked": {"BOOL": false},
+                "expiration": {"N": timestamp_to_string(*TESTING_EXPIRATION)},
+                "deleteAt": {"N": timestamp_to_string(*TESTING_DELETE_AT)},
             })
         }
 
@@ -1268,16 +1271,16 @@ mod tests {
             epoch: &str,
         ) -> serde_json::Value {
             serde_json::json!({
-            ROOM_ID_KEY: {"S": call_link_room_key_str(room_id)},
-            RECORD_TYPE_KEY: {"S": CallLinkState::RECORD_TYPE},
-            "epoch": {"N": epoch},
-            "adminPasskey": {"B": STANDARD.encode([1, 2, 3])},
-            "zkparams": {"B": ""},
-            "restrictions": {"S": "adminApproval"},
-            "encryptedName": {"B": STANDARD.encode(b"abc")},
-            "revoked": {"BOOL": false},
-            "expiration": {"N": timestamp_to_string(*TESTING_EXPIRATION)},
-            "deleteAt": {"N": timestamp_to_string(*TESTING_DELETE_AT)},
+                ROOM_ID_KEY: {"S": call_link_room_key_str(room_id)},
+                RECORD_TYPE_KEY: {"S": CallLinkState::RECORD_TYPE},
+                "epoch": {"N": epoch},
+                "adminPasskey": {"B": STANDARD.encode([1, 2, 3])},
+                "zkparams": {"B": ""},
+                "restrictions": {"S": "adminApproval"},
+                "encryptedName": {"B": STANDARD.encode(b"abc")},
+                "revoked": {"BOOL": false},
+                "expiration": {"N": timestamp_to_string(*TESTING_EXPIRATION)},
+                "deleteAt": {"N": timestamp_to_string(*TESTING_DELETE_AT)},
             })
         }
 
@@ -1581,6 +1584,27 @@ mod tests {
                     Ok(())
                 },
             )
+            .await
+        }
+
+        #[tokio::test]
+        async fn test_get_call_link_with_invalid_data() -> Result<()> {
+            let room_id = format!("testing-room-{}", line!());
+            // Missing adminPasskey, zkparams, encryptedName, among others
+            let bad_data = serde_json::json!({
+                ROOM_ID_KEY: {"S": call_link_room_key_str(&room_id)},
+                RECORD_TYPE_KEY: {"S": CallLinkState::RECORD_TYPE},
+            });
+            let storage = bootstrap_storage().await?;
+            with_db_items(&storage, [bad_data], [], async {
+                std::assert_matches!(
+                    storage
+                        .get_call_link(&RoomId::from(room_id.as_str()), None)
+                        .await,
+                    Err(StorageError::UnexpectedError(_))
+                );
+                Ok(())
+            })
             .await
         }
 
