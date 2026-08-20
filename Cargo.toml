@@ -6,16 +6,16 @@
 [workspace]
 resolver = "2"
 members = [
-    "backend",
-    "load_test",
-    "common",
-    "docker/bootstrap",
-    "frontend",
-    "metrics",
+  "backend",
+  "load_test",
+  "common",
+  "docker/bootstrap",
+  "frontend",
+  "metrics",
 ]
 
 [workspace.package]
-version = "138.0.0"
+version = "139.0.0"
 edition = "2021"
 
 [profile.release]
