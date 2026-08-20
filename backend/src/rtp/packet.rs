@@ -22,8 +22,8 @@ use metrics::event;
 use super::{
     from_rtx_payload_type, from_rtx_ssrc, is_audio_payload_type, is_padding_payload_type,
     is_video_payload_type, srtp::*, to_rtx_payload_type, to_rtx_ssrc, types::*,
-    TemplateDependencyStructure, VideoRotation, CLIENT_SERVER_DATA_PAYLOAD_TYPE, PACKET_LIFETIME,
-    VERSION, VP8_PAYLOAD_TYPE,
+    DefaultBitstreamWriter, TemplateDependencyStructure, VideoRotation,
+    CLIENT_SERVER_DATA_PAYLOAD_TYPE, PACKET_LIFETIME, RED_PAYLOAD_TYPE, VERSION, VP8_PAYLOAD_TYPE,
 };
 use crate::{
     audio,
@@ -291,12 +291,12 @@ impl Header {
     }
 }
 
-type RtpStreamAllocation = Vec<SpatialLayer>;
+pub type RtpStreamAllocation = Vec<SpatialLayer>;
 
 /// http://www.webrtc.org/experiments/rtp-hdrext/video-layers-allocation00
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SpatialLayer {
-    temporal_layer_rates: Vec<DataRate>,
+    pub temporal_layer_rates: Vec<DataRate>,
     pub size: Option<PixelSize>,
 }
 
@@ -392,7 +392,7 @@ fn read_video_layers_allocation(bytes: &[u8]) -> Result<Vec<RtpStreamAllocation>
 // and the logical seqnum is stored in the first part of the payload.
 #[derive(Debug, Clone)]
 pub struct Packet<T> {
-    pub(super) marker: bool,
+    pub marker: bool,
     // We use these _in_header values because of how the logical values
     // and the header values differ when the packet is RTX.
     pub(super) payload_type_in_header: PayloadType,
@@ -559,6 +559,10 @@ impl<T> Packet<T> {
         self.payload_type() == VP9_PAYLOAD_TYPE
     }
 
+    pub fn is_red(&self) -> bool {
+        self.payload_type() == RED_PAYLOAD_TYPE
+    }
+
     pub fn is_data(&self) -> bool {
         self.payload_type() == CLIENT_SERVER_DATA_PAYLOAD_TYPE
     }
@@ -667,6 +671,97 @@ impl<T: Borrow<[u8]>> Packet<T> {
         }
         outgoing.set_timestamp_in_header(new_timestamp);
         outgoing
+    }
+
+    pub fn rewrite_with_dependency_descriptor(
+        &self,
+        seqnum: FullSequenceNumber,
+        marker: bool,
+        dependency_descriptor: &DependencyDescriptor,
+    ) -> Option<Packet<Vec<u8>>> {
+        const V: u8 = VERSION << 6;
+        const P: u8 = 0 << 5; // no padding
+        const X: u8 = 1 << 4; // has extensions
+        const CC: u8 = 0; // no CSRCs
+
+        // The TCC seqnum extension is always present. We put it in the first slot so that
+        // it is always in a known position. The value will be written later, prior to
+        // the packet being put on the wire.
+        const TCC_SEQNUM_RANGE: Range<usize> = 18..20;
+
+        // Serialize the dependency descriptor
+        let mut writer = DefaultBitstreamWriter::default();
+        dependency_descriptor.write(&mut writer);
+        let serialized_dependency_descriptor = writer.as_slice();
+        if serialized_dependency_descriptor.len() > 255 {
+            warn!("Cannot rewrite packet: dependency descriptor too long");
+            return None;
+        }
+
+        let extensions = (
+            write_two_byte_extension(RTP_EXT_ID_TCC_SEQNUM, [0u8, 0]),
+            write_two_byte_extension(
+                RTP_EXT_ID_DEPENDENCY_DESCRIPTOR,
+                serialized_dependency_descriptor,
+            ),
+            self.video_rotation.map(|rotation| {
+                let encoded: u8 = rotation.into();
+                write_two_byte_extension(RTP_EXT_ID_VIDEO_ORIENTATION, [encoded])
+            }),
+        );
+        let extensions_len = extensions.written_len();
+        let padded_len = round_up_to_multiple_of::<4>(extensions_len);
+        let padding_len = padded_len - extensions_len;
+        let extension_padding = &[0u8, 0, 0][..padding_len];
+        let extension_word_count = u16::try_from(padded_len / 4).expect("too many extensions");
+
+        let header = (
+            [V | P | X | CC],
+            [((marker as u8) << 7) | (self.payload_type() & 0b1111111)],
+            seqnum as TruncatedSequenceNumber,
+            self.timestamp,
+            self.ssrc(),
+            (
+                RTP_TWO_BYTE_EXTENSIONS_PROFILE,
+                extension_word_count,
+                extensions,
+                extension_padding,
+            ),
+        );
+
+        let payload = self.payload();
+        let packet_size = header.written_len() + payload.len() + SRTP_AUTH_TAG_LEN;
+        let mut buffer = Vec::with_capacity(packet_size);
+        header.write(&mut buffer);
+        let payload_start = buffer.len();
+        buffer.extend_from_slice(payload);
+        let payload_end = buffer.len();
+        let payload_range = payload_start..payload_end;
+
+        // Add room for the SRTP auth tag.
+        buffer.resize(buffer.capacity(), 0u8);
+
+        Some(Packet {
+            marker,
+            payload_type_in_header: self.payload_type(),
+            ssrc_in_header: self.ssrc(),
+            seqnum_in_header: seqnum,
+            seqnum_in_payload: None,
+            pending_retransmission: false,
+            timestamp: self.timestamp,
+            video_rotation: self.video_rotation,
+            audio_level: None,
+            dependency_descriptor: None,
+            video_layers_allocation: None,
+            tcc_seqnum: None,
+            tcc_seqnum_range: Some(TCC_SEQNUM_RANGE),
+            payload_range_in_header: payload_range,
+            encrypted: false,
+            deadline: self.deadline,
+            padding_byte_count: 0,
+            is_max_seqnum: false,
+            serialized: buffer,
+        })
     }
 }
 
@@ -838,7 +933,7 @@ impl<T: BorrowMut<[u8]>> Packet<T> {
 
 /// Encodes a one-byte RTP extension.
 pub fn write_extension(id: u8, value: impl Writer) -> impl Writer {
-    assert!(id & 0xF == id, "id must fit in 4 bits");
+    assert_eq!(id & 0xF, id, "id must fit in 4 bits");
     let length = value.written_len();
     assert!(
         length > 0,
@@ -849,7 +944,6 @@ pub fn write_extension(id: u8, value: impl Writer) -> impl Writer {
     ([header], value)
 }
 
-#[cfg(any(test, feature = "load_test"))]
 fn write_two_byte_extension(id: u8, value: impl Writer) -> impl Writer {
     assert_ne!(id, 0, "id must not be 0");
     let length = value.written_len();

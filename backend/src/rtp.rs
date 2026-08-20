@@ -23,7 +23,7 @@ use metrics::*;
 use nack::*;
 pub use nack::{write_nack, Nack};
 use packet::*;
-pub use packet::{Header, Packet};
+pub use packet::{Header, Packet, RtpStreamAllocation, SpatialLayer};
 use rtcp::*;
 pub use rtcp::{ControlPacket, KeyFrameRequest};
 pub use rtx::to_rtx_ssrc;
@@ -42,6 +42,7 @@ const CLIENT_SERVER_DATA_PAYLOAD_TYPE: PayloadType = 101;
 pub const OPUS_PAYLOAD_TYPE: PayloadType = 102;
 pub const VP8_PAYLOAD_TYPE: PayloadType = 108;
 pub const VP9_PAYLOAD_TYPE: PayloadType = 109;
+pub const RED_PAYLOAD_TYPE: PayloadType = 120;
 
 // Discard outgoing packets after this time.
 // 3 second lifetime matches WebRTC's RTX history
@@ -88,6 +89,19 @@ impl From<u8> for VideoRotation {
     }
 }
 
+// Convert VideoRotation into its encoded form. Currently, we disregard, the C and F flags
+// (C = camera direction, F = flip).
+impl From<VideoRotation> for u8 {
+    fn from(value: VideoRotation) -> Self {
+        match value {
+            VideoRotation::None => 0,
+            VideoRotation::Clockwise90 => 1,
+            VideoRotation::Clockwise180 => 2,
+            VideoRotation::Clockwise270 => 3,
+        }
+    }
+}
+
 pub fn expand_seqnum(
     seqnum: TruncatedSequenceNumber,
     max_seqnum: &mut FullSequenceNumber,
@@ -110,7 +124,7 @@ pub fn expand_frame_number(
 }
 
 fn is_media_payload_type(pt: PayloadType) -> bool {
-    pt == OPUS_PAYLOAD_TYPE || pt == VP8_PAYLOAD_TYPE
+    pt == OPUS_PAYLOAD_TYPE || pt == VP8_PAYLOAD_TYPE || pt == VP9_PAYLOAD_TYPE
 }
 
 fn is_audio_payload_type(pt: PayloadType) -> bool {
@@ -130,7 +144,7 @@ fn is_rtx_payload_type(pt: PayloadType) -> bool {
 }
 
 fn is_rtxable_payload_type(pt: PayloadType) -> bool {
-    pt == VP8_PAYLOAD_TYPE
+    pt == VP8_PAYLOAD_TYPE || pt == VP9_PAYLOAD_TYPE
 }
 
 // Keeps some state to make it easier to process incoming packets.

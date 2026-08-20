@@ -37,6 +37,7 @@ pub struct Participant {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub opaque_user_id: Option<UserId>,
     pub demux_id: u32,
+    pub requires_svc: bool,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Eq, Debug)]
@@ -63,6 +64,7 @@ pub struct JoinRequest {
     pub ice_pwd: String,
     pub dhe_public_key: String,
     pub hkdf_extra_info: Option<String>,
+    pub requires_svc: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -201,6 +203,7 @@ pub async fn get_participants(
         .map(|client| Participant {
             opaque_user_id: client.opaque_user_id,
             demux_id: client.demux_id.as_u32(),
+            requires_svc: client.requires_svc,
         })
         .collect();
     let creator = Some(call.creator);
@@ -211,11 +214,11 @@ pub async fn get_participants(
         .map(|client| Participant {
             opaque_user_id: client.opaque_user_id,
             demux_id: client.demux_id.as_u32(),
+            requires_svc: client.requires_svc,
         })
         .collect();
 
     let call_link_state = call_link_state.map(|s| s.into());
-
     Ok(Json(ParticipantsResponse {
         era_id: call.era_id,
         max_devices: frontend.config.max_clients_per_call,
@@ -384,6 +387,7 @@ pub async fn join(
         return temporary_redirect(&redirect_uri);
     }
     let user_agent = user_agent.map_or(SignalUserAgent::Unknown, |header| header.0.as_str().into());
+    let requires_svc = request.requires_svc.is_some_and(|value| value);
 
     let join_client_timer =
         start_timer_us!("calling.frontend.api.v2.join.join_client_to_call.timed");
@@ -402,6 +406,7 @@ pub async fn join(
                 approved_users,
                 call_type,
                 user_agent,
+                requires_svc,
             },
         )
         .await?;
@@ -571,6 +576,7 @@ pub mod api_server_v2_tests {
             ice_pwd: CLIENT_ICE_PWD.to_string(),
             dhe_public_key: CLIENT_DHE_PUBLIC_KEY.to_string(),
             hkdf_extra_info: None,
+            requires_svc: None,
         }
     }
 
@@ -582,6 +588,7 @@ pub mod api_server_v2_tests {
                 dhe_public_key: CLIENT_DHE_PUBLIC_KEY.to_string(),
                 hkdf_extra_info: None,
                 admin_passkey: Some(passkey.into()),
+                requires_svc: None,
             })
             .unwrap()
         } else {
@@ -591,6 +598,7 @@ pub mod api_server_v2_tests {
                 ice_pwd: CLIENT_ICE_PWD.to_string(),
                 dhe_public_key: CLIENT_DHE_PUBLIC_KEY.to_string(),
                 hkdf_extra_info: None,
+                requires_svc: None,
             })
             .unwrap()
         }
@@ -606,6 +614,7 @@ pub mod api_server_v2_tests {
         backend::ClientsResponse {
             user_ids: client_ids,
             demux_ids,
+            demux_ids_require_svc: vec![],
             pending_clients: vec![],
         }
     }
@@ -963,6 +972,7 @@ pub mod api_server_v2_tests {
                     room_id: RoomId::from(GROUP_ID_1),
                     approved_users: None,
                     call_type: CallType::GroupV2,
+                    requires_svc: false,
                 }),
             )
             .once()
@@ -1076,6 +1086,7 @@ pub mod api_server_v2_tests {
                     room_id: RoomId::from(GROUP_ID_1),
                     approved_users: None,
                     call_type: CallType::GroupV2,
+                    requires_svc: false,
                 }),
             )
             .once()
@@ -1225,6 +1236,7 @@ pub mod api_server_v2_tests {
             ice_pwd: CLIENT_ICE_PWD.to_string(),
             dhe_public_key: "".to_string(),
             hkdf_extra_info: None,
+            requires_svc: None,
         };
 
         let request = Request::builder()
@@ -1909,6 +1921,7 @@ pub mod api_server_v2_tests {
                 Ok(backend::ClientsResponse {
                     user_ids: vec![USER_ID_1.into()],
                     demux_ids: vec![DEMUX_ID_1],
+                    demux_ids_require_svc: vec![],
                     pending_clients: vec![backend::ClientInfo {
                         demux_id: DEMUX_ID_2,
                         user_id: Some(USER_ID_2.into()),
@@ -2014,6 +2027,7 @@ pub mod api_server_v2_tests {
                 Ok(backend::ClientsResponse {
                     user_ids: vec![USER_ID_1.into()],
                     demux_ids: vec![DEMUX_ID_1],
+                    demux_ids_require_svc: vec![],
                     pending_clients: vec![backend::ClientInfo {
                         demux_id: DEMUX_ID_2,
                         user_id: None,
@@ -2097,10 +2111,12 @@ pub mod api_server_v2_tests {
                     Participant {
                         opaque_user_id: Some(USER_ID_1_DOUBLE_ENCODED.into()),
                         demux_id: DEMUX_ID_1,
+                        requires_svc: false,
                     },
                     Participant {
                         opaque_user_id: Some(USER_ID_2_DOUBLE_ENCODED.into()),
                         demux_id: DEMUX_ID_2,
+                        requires_svc: false,
                     },
                 ],
                 pending_clients: vec![],
@@ -2553,6 +2569,7 @@ pub mod api_server_v2_tests {
                     room_id: RoomId::from(CALL_LINK_ROOM_ID),
                     approved_users: Some(vec![]),
                     call_type: CallType::Adhoc,
+                    requires_svc: false,
                 }),
             )
             .once()
@@ -2691,6 +2708,7 @@ pub mod api_server_v2_tests {
                     room_id: RoomId::from(CALL_LINK_ROOM_ID),
                     approved_users: Some(vec![]),
                     call_type: CallType::Adhoc,
+                    requires_svc: false,
                 }),
             )
             .once()
@@ -2830,6 +2848,7 @@ pub mod api_server_v2_tests {
                     room_id: RoomId::from(CALL_LINK_ROOM_ID),
                     approved_users: Some(vec!["11223344".to_string(), "aabbccdd".to_string()]),
                     call_type: CallType::Adhoc,
+                    requires_svc: false,
                 }),
             )
             .once()
@@ -2942,6 +2961,7 @@ pub mod api_server_v2_tests {
                     room_id: RoomId::from(ROOM_ID),
                     approved_users: Some(vec![]),
                     call_type: CallType::Adhoc,
+                    requires_svc: false,
                 }),
             )
             .once()
@@ -3055,6 +3075,7 @@ pub mod api_server_v2_tests {
                     room_id: RoomId::from(ROOM_ID),
                     approved_users: Some(vec!["11223344".to_string(), "aabbccdd".to_string()]),
                     call_type: CallType::Adhoc,
+                    requires_svc: false,
                 }),
             )
             .once()
@@ -3272,6 +3293,7 @@ pub mod api_server_v2_tests {
                     room_id: RoomId::from(ROOM_ID),
                     approved_users: Some(vec![]),
                     call_type: CallType::Adhoc,
+                    requires_svc: false,
                 }),
             )
             .once()
@@ -3386,6 +3408,7 @@ pub mod api_server_v2_tests {
                     room_id: RoomId::from(ROOM_ID),
                     approved_users: Some(vec![]),
                     call_type: CallType::Adhoc,
+                    requires_svc: false,
                 }),
             )
             .once()
@@ -3712,6 +3735,7 @@ pub mod api_server_v2_tests {
             ice_pwd: CLIENT_ICE_PWD.to_string(),
             dhe_public_key: "".to_string(),
             hkdf_extra_info: None,
+            requires_svc: None,
         };
         let join_request = serde_json::to_vec(&join_request).unwrap();
 

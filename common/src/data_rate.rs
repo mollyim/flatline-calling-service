@@ -40,6 +40,8 @@ impl std::fmt::Debug for DataSize {
 
 impl DataSize {
     pub const ZERO: Self = Self::from_bits(0);
+    pub const MAX: Self = Self::from_bits(u64::MAX);
+
     const BITS_PER_BYTE: u64 = 8;
     const BITS_PER_KILO_BIT: u64 = 1000;
     const BITS_PER_MEGA_BIT: u64 = Self::BITS_PER_KILO_BIT * Self::BITS_PER_KILO_BIT;
@@ -284,6 +286,7 @@ impl Default for DataRate {
 
 impl DataRate {
     pub const ZERO: Self = Self::per_second(DataSize::ZERO);
+    pub const MAX: Self = Self::per_second(DataSize::MAX);
 
     pub const fn per_second(size_per_second: DataSize) -> Self {
         Self { size_per_second }

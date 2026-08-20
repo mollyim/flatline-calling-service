@@ -26,6 +26,7 @@ use parking_lot::Mutex;
 use prost::Message;
 use reqwest::Url;
 use serde::Serialize;
+use smallvec::SmallVec;
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, EnumString};
 use thiserror::Error;
@@ -44,13 +45,23 @@ use approval_persistence::ApprovedUsers;
 use metrics::{metric_config::StaticStrTagsRef, *};
 
 use crate::{
+    call::Error::UnknownDemuxId,
     endorsements::{CallEndorsementIssuer, CallSendEndorsements, EndorsementIssuer},
     protos::{
         device_to_sfu,
         sfu_to_device::{DeviceJoinedOrLeft, Speaker},
         DeviceToSfu, SfuToDevice,
     },
+    rtp::TemplateDependencyStructure,
     sfu::CallSignalingInfo,
+    svc::{
+        allocator::{
+            BasicAllocationStrategy, BasicAllocationStrategyResult, DefaultAllocator,
+            ThrottledAllocator,
+        },
+        DecodeTargetInfoList, DecodeTargetInfoLists, ExtendedPacketInfo, ScalableVideoError,
+        ScalableVideoState, ScalableVideoTickResult, MAX_EXPECTED_CLIENTS,
+    },
 };
 
 pub const CLIENT_SERVER_DATA_SSRC: rtp::Ssrc = 1;
@@ -328,6 +339,7 @@ pub enum LayerId {
     Video0 = 2,
     Video1 = 4,
     Video2 = 6,
+    Svc = 8,
     RtpData = 0xD,
 }
 
@@ -338,6 +350,7 @@ impl LayerId {
             2 => LayerId::Video0,
             4 => LayerId::Video1,
             6 => LayerId::Video2,
+            8 => LayerId::Svc,
             0xD => LayerId::RtpData,
             _ => {
                 return None;
@@ -378,7 +391,8 @@ impl LayerId {
 pub enum Error {
     #[error("received RTP data for server with invalid protobuf")]
     InvalidClientToServerProtobuf,
-    #[error("received RTP packet with unauthorized SSRC.  Authorized DemuxId: {0:?}.  Received DemuxId: {1:?}")]
+    #[error("received RTP packet with unauthorized SSRC.  Authorized DemuxId: {0:?}.  Received DemuxId: {1:?}"
+    )]
     UnauthorizedRtpSsrc(DemuxId, DemuxId),
     #[error("received RTP packet without dependency descriptor")]
     MissingDependencyDescriptor,
@@ -392,11 +406,13 @@ pub enum Error {
     UnknownDemuxId(DemuxId),
     #[error("received RTP leave")]
     Leave,
+    #[error("Scalable video error")]
+    ScalableVideoError(#[from] ScalableVideoError),
 }
 
 /// Represents an RTP packet that should be sent to a particular client
 /// of the call, identified by DemuxId.
-type RtpToSend = (DemuxId, rtp::Packet<Vec<u8>>);
+pub type RtpToSend = (DemuxId, rtp::Packet<Vec<u8>>);
 /// Represents a KeyFrameRequest that should be sent to a particular client
 /// of the call, identified by DemuxId.
 type KeyFrameRequestToSend = (DemuxId, rtp::KeyFrameRequest);
@@ -562,11 +578,13 @@ impl Call {
     }
 
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     pub fn add_client(
         &self,
         demux_id: DemuxId,
         user_id: UserId,
         is_admin: bool,
+        requires_svc: bool,
         region_relation: RegionRelation,
         user_agent: SignalUserAgent,
         now: Instant,
@@ -575,6 +593,7 @@ impl Call {
             demux_id,
             user_id,
             is_admin,
+            requires_svc,
             region_relation,
             user_agent,
             &self.call_info,
@@ -587,6 +606,16 @@ impl Call {
         self.inner
             .lock()
             .drop_client(demux_id, &self.call_info, now, reason);
+    }
+
+    #[inline(always)]
+    pub fn get_template_dependency_structure(
+        &self,
+        demux_id: DemuxId,
+    ) -> Option<TemplateDependencyStructure> {
+        self.inner
+            .lock()
+            .get_template_dependency_structure(demux_id)
     }
 
     #[inline(always)]
@@ -791,6 +820,8 @@ struct CallInner {
     /// If true, do not send fragmentable updates for this call
     /// toggle when there is client support for fragmentable updates
     drop_fragmentable_updates: bool,
+
+    allocators: HashMap<DemuxId, ThrottledAllocator>,
 }
 
 #[derive(Debug, Default)]
@@ -871,6 +902,8 @@ impl CallInner {
             key_frame_request_sent_by_ssrc: HashMap::new(),
             call_stats: CallStats::default(),
             drop_fragmentable_updates,
+
+            allocators: HashMap::new(),
         }
     }
 
@@ -939,6 +972,7 @@ impl CallInner {
         demux_id: DemuxId,
         user_id: UserId,
         is_admin: bool,
+        requires_svc: bool,
         region_relation: RegionRelation,
         user_agent: SignalUserAgent,
         call_info: &CallInfo,
@@ -955,6 +989,7 @@ impl CallInner {
             user_id,
             member_ciphertext,
             is_admin,
+            requires_svc,
             region_relation,
             user_agent,
             mrp_stream: MrpStream::with_capacity_limit(MAX_MRP_WINDOW_SIZE),
@@ -1019,20 +1054,44 @@ impl CallInner {
         if let Some(endorsement_issuer) = self.endorsement_issuer.as_mut() {
             endorsement_issuer.track_member_added(pending_client.user_id.clone());
         }
-
         let demux_id = pending_client.demux_id;
-        self.clients.push(Client::new(
+        let mut client = Client::new(
             pending_client,
             call_info.initial_target_send_rate,
             call_info.default_requested_max_send_rate,
             now,
-        ));
-        self.allocate_video_layers(
-            demux_id,
-            call_info.initial_target_send_rate,
-            call_info.initial_target_send_rate,
-            now,
         );
+        // If this is an SVC client we'll hook it up to the rest of the SVC clients that
+        // know how to send and receive SVC streams.
+        if let Some(scalable_video_state) = client.scalable_video_state.as_mut() {
+            self.clients.iter_mut().for_each(|existing_client| {
+                if let Some(existing_client_scalable_video_state) =
+                    existing_client.scalable_video_state.as_mut()
+                {
+                    scalable_video_state.add_receiver(existing_client.demux_id, now);
+                    existing_client_scalable_video_state.add_receiver(demux_id, now);
+                }
+            });
+            self.allocators.insert(
+                demux_id,
+                ThrottledAllocator::new(
+                    client.demux_id,
+                    Box::new(DefaultAllocator),
+                    Duration::from_millis(1000),
+                ),
+            );
+            self.clients.push(client);
+            self.svc_reallocate(now);
+        } else {
+            // Otherwise, this is a simulcast client.
+            self.clients.push(client);
+            self.allocate_video_layers(
+                demux_id,
+                call_info.initial_target_send_rate,
+                call_info.initial_target_send_rate,
+                now,
+            );
+        }
         // We may have to update the padding SSRCs because there can't be any padding SSRCs until two people join
         self.update_padding_ssrcs();
         self.call_stats.peak_call_size = max(self.call_stats.peak_call_size, self.size());
@@ -1125,6 +1184,16 @@ impl CallInner {
         {
             self.will_add_or_remove_client(now);
             let removed_client = self.clients.swap_remove(index);
+            // If this is an SVC client, we'll unhook it from the rest of the SVC clients and
+            // also release its allocator.
+            if removed_client.is_svc_enabled() {
+                self.allocators.remove(&demux_id);
+                self.clients.iter_mut().for_each(|client| {
+                    if let Some(scalable_video_state) = client.scalable_video_state.as_mut() {
+                        scalable_video_state.remove_receiver(demux_id);
+                    }
+                })
+            }
             self.update_for_removed_clients(&[demux_id], now);
             Some(removed_client)
         } else {
@@ -1199,6 +1268,14 @@ impl CallInner {
         }
     }
 
+    fn get_template_dependency_structure(
+        &self,
+        demux_id: DemuxId,
+    ) -> Option<TemplateDependencyStructure> {
+        self.find_client(demux_id)
+            .and_then(|client| client.get_template_dependency_structure())
+    }
+
     fn lower_raised_hand(&mut self, demux_id: DemuxId, now: Instant) {
         if let Some(raised_hands) = &mut self.raised_hands {
             // Set raise to false
@@ -1250,7 +1327,14 @@ impl CallInner {
         // for each of the other clients in the call. So we have to pick one of those.
         // And the easiest one to pick is the RTX SSRC for the video base layer for
         // the given sender.demux_id.
-        let padding_ssrc = |sender: &Client| Some(LayerId::Video0.to_rtx_ssrc(sender.demux_id));
+        let padding_ssrc = |sender: &Client| {
+            let ssrc = if sender.is_svc_enabled() {
+                LayerId::Svc.to_rtx_ssrc(sender.demux_id)
+            } else {
+                LayerId::Video0.to_rtx_ssrc(sender.demux_id)
+            };
+            Some(ssrc)
+        };
 
         match self.clients.as_mut_slice() {
             [] => {
@@ -1391,6 +1475,66 @@ impl CallInner {
         Ok(())
     }
 
+    #[inline]
+    fn forward_vp8(
+        &mut self,
+        sender_demux_id: DemuxId,
+        incoming_rtp: &rtp::Packet<&[u8]>,
+    ) -> Vec<RtpToSend> {
+        self.clients
+            .iter_mut()
+            .filter_map(|client| {
+                if client.demux_id == sender_demux_id {
+                    None
+                } else {
+                    client
+                        .forward_video_rtp_vp8(incoming_rtp)
+                        .map(|outgoing_rtp| (client.demux_id, outgoing_rtp))
+                }
+            })
+            .collect()
+    }
+
+    #[inline]
+    fn forward_audio_rtp(
+        &mut self,
+        sender_demux_id: DemuxId,
+        incoming_rtp: &rtp::Packet<&[u8]>,
+    ) -> Vec<RtpToSend> {
+        self.clients
+            .iter_mut()
+            .filter_map(|client| {
+                if client.demux_id == sender_demux_id {
+                    None
+                } else {
+                    client
+                        .forward_audio_rtp(incoming_rtp)
+                        .map(|outgoing_rtp| (client.demux_id, outgoing_rtp))
+                }
+            })
+            .collect()
+    }
+
+    #[inline]
+    fn forward_data_rtp(
+        &mut self,
+        sender_demux_id: DemuxId,
+        incoming_rtp: &rtp::Packet<&[u8]>,
+    ) -> Vec<RtpToSend> {
+        self.clients
+            .iter_mut()
+            .filter_map(|client| {
+                if client.demux_id == sender_demux_id {
+                    None
+                } else {
+                    client
+                        .forward_data_rtp(incoming_rtp)
+                        .map(|outgoing_rtp| (client.demux_id, outgoing_rtp))
+                }
+            })
+            .collect()
+    }
+
     fn handle_device_to_sfu_inner(
         &mut self,
         proto: protos::DeviceToSfu,
@@ -1425,27 +1569,34 @@ impl CallInner {
                         }
                     })
                     .collect();
-                sender.requested_max_send_rate = video_request_proto
-                    .max_kbps
-                    .map(|kbps| DataRate::from_kbps(kbps as u64))
-                    .unwrap_or(default_requested_max_send_rate);
-                sender.active_speaker_height = VideoHeight::from(
-                    video_request_proto
+                if let Some(scalable_video_state) = sender.scalable_video_state.as_mut() {
+                    if let Some(target_rate) = video_request_proto.max_kbps {
+                        scalable_video_state
+                            .set_requested_target_rate(DataRate::from_kbps(target_rate as u64));
+                    }
+                    sender.video_request_proto = Some(video_request_proto);
+                } else {
+                    sender.requested_max_send_rate = video_request_proto
+                        .max_kbps
+                        .map(|kbps| DataRate::from_kbps(kbps as u64))
+                        .unwrap_or(default_requested_max_send_rate);
+                    sender.active_speaker_height = video_request_proto
                         .active_speaker_height
                         .map(|height| height as u16)
-                        .unwrap_or(0),
-                );
-                sender.video_request_proto = Some(video_request_proto);
-                // We reallocate immediately to make a more pleasant expereience for the user
-                // (no extra delay for selecting a higher resolution or requesting a new max send rate)
-                let target_send_rate = sender.target_send_rate;
-                let min_target_send_rate = sender.min_target_send_rate();
-                self.allocate_video_layers(
-                    sender_demux_id,
-                    target_send_rate,
-                    min_target_send_rate,
-                    now,
-                );
+                        .unwrap_or(0)
+                        .into();
+                    sender.video_request_proto = Some(video_request_proto);
+                    // We reallocate immediately to make a more pleasant expereience for the user
+                    // (no extra delay for selecting a higher resolution or requesting a new max send rate)
+                    let target_send_rate = sender.target_send_rate;
+                    let min_target_send_rate = sender.min_target_send_rate();
+                    self.allocate_video_layers(
+                        sender_demux_id,
+                        target_send_rate,
+                        min_target_send_rate,
+                        now,
+                    );
+                }
             }
         }
 
@@ -1526,10 +1677,8 @@ impl CallInner {
     ) -> Result<Vec<RtpToSend>, Error> {
         let sender = self
             .find_client_mut(sender_demux_id)
-            .ok_or(Error::UnknownDemuxId(sender_demux_id))?;
+            .ok_or(UnknownDemuxId(sender_demux_id))?;
 
-        // Make sure to do this before processing audio level, etc.
-        // Otherwise someone could fake the SSRC to change active speaker and that sort of thing.
         let authorized_sender_demux_id = DemuxId::from_ssrc(incoming_rtp.ssrc());
         if authorized_sender_demux_id != sender_demux_id {
             return Err(Error::UnauthorizedRtpSsrc(
@@ -1537,70 +1686,35 @@ impl CallInner {
                 sender_demux_id,
             ));
         }
-
         let incoming_rtp = incoming_rtp.borrow();
         if let Some(audio_level) = incoming_rtp.audio_level {
-            time_scope_us!("calling.call.handle_rtp.audio_level");
-            sender.incoming_audio_levels.push(audio_level, now);
-            // Active speaker is recalculated in tick()
-            // Forward some silent packets for comfort noise and PLC before
-            // starting to drop them
-            if audio_level == 0 {
-                if sender.is_maybe_in_dtx {
-                    return Ok(vec![]);
-                }
-
-                // take an even number of packets to account for TOC + refresh
-                // check at least one second of DTX packets (>= 6) assuming two packets
-                // every 400ms interval.
-                const SILENT_PACKET_LIMIT: usize = 6;
-                let recent_audio_levels: u32 = sender
-                    .incoming_audio_levels
-                    .iter_rev()
-                    .take(SILENT_PACKET_LIMIT)
-                    .map(|(level, _)| *level as u32)
-                    .sum();
-                if recent_audio_levels == 0 {
-                    sender.is_maybe_in_dtx = true;
-                    return Ok(vec![]);
-                }
-            } else {
-                sender.is_maybe_in_dtx = false;
+            if sender.handle_audio_level(audio_level, now) {
+                return Ok(vec![]);
             }
         }
-
-        if incoming_rtp.is_vp8()
-            && sender.update_incoming_video_rate_and_resolution(&incoming_rtp, now)?
-        {
-            self.reallocate_target_send_rates(now);
-        }
-
-        let mut rtp_to_send = vec![];
-
         let layer_id = LayerId::from_ssrc(incoming_rtp.ssrc()).ok_or(Error::InvalidRtpLayerId)?;
-
         time_scope_us!("calling.call.handle_rtp.forwarding");
-
-        for receiver in &mut self.clients {
-            if receiver.demux_id == sender_demux_id {
-                // Don't send to yourself.
-                continue;
-            }
-            if let Some(rtp_to_forward) = match layer_id {
-                LayerId::Audio => receiver.forward_audio_rtp(&incoming_rtp),
-                LayerId::RtpData => receiver.forward_data_rtp(&incoming_rtp),
-                LayerId::Video0 | LayerId::Video1 | LayerId::Video2 => {
-                    if incoming_rtp.is_vp8() {
-                        receiver.forward_video_rtp_vp8(&incoming_rtp)
-                    } else {
-                        None
-                    }
+        let rtp_to_send = match layer_id {
+            LayerId::Audio => self.forward_audio_rtp(sender_demux_id, &incoming_rtp),
+            LayerId::RtpData => self.forward_data_rtp(sender_demux_id, &incoming_rtp),
+            LayerId::Svc => match sender.scalable_video_state.as_mut() {
+                Some(scalable_video_state) if incoming_rtp.is_vp9() => {
+                    let ext_info = scalable_video_state.handle_packet(&incoming_rtp, now)?;
+                    self.svc_dispatch_packet(sender_demux_id, &incoming_rtp, ext_info, now)?
                 }
-            } {
-                rtp_to_send.push((receiver.demux_id, rtp_to_forward));
+                _ => vec![],
+            },
+            _ => {
+                if incoming_rtp.is_vp8() {
+                    if sender.update_incoming_video_rate_and_resolution(&incoming_rtp, now)? {
+                        self.reallocate_target_send_rates(now);
+                    }
+                    self.forward_vp8(sender_demux_id, &incoming_rtp)
+                } else {
+                    vec![]
+                }
             }
-        }
-
+        };
         Ok(rtp_to_send)
     }
 
@@ -1674,6 +1788,8 @@ impl CallInner {
         time_scope_us!("calling.call.tick");
 
         self.approved_users.tick();
+
+        self.svc_tick(now);
 
         for sender in &mut self.clients {
             for v in sender.incoming_video.each_mut().iter_mut() {
@@ -1762,28 +1878,33 @@ impl CallInner {
         let receiver = self
             .find_client_mut(receiver_demux_id)
             .ok_or(Error::UnknownDemuxId(receiver_demux_id))?;
+
         receiver.target_send_rate = new_target_send_rate;
 
-        if now > receiver.next_min_target_generation_update_time {
-            receiver.old_generation_min_target_send_rate =
-                receiver.current_generation_min_target_send_rate;
-            receiver.current_generation_min_target_send_rate = new_target_send_rate;
-            receiver.next_min_target_generation_update_time =
-                now + MIN_TARGET_SEND_RATE_GENERATION_INTERVAL;
-        } else if new_target_send_rate < receiver.current_generation_min_target_send_rate {
-            receiver.current_generation_min_target_send_rate = new_target_send_rate;
-        }
+        if let Some(scalable_video_state) = receiver.scalable_video_state.as_mut() {
+            scalable_video_state.set_available_rate(new_target_send_rate);
+        } else {
+            if now > receiver.next_min_target_generation_update_time {
+                receiver.old_generation_min_target_send_rate =
+                    receiver.current_generation_min_target_send_rate;
+                receiver.current_generation_min_target_send_rate = new_target_send_rate;
+                receiver.next_min_target_generation_update_time =
+                    now + MIN_TARGET_SEND_RATE_GENERATION_INTERVAL;
+            } else if new_target_send_rate < receiver.current_generation_min_target_send_rate {
+                receiver.current_generation_min_target_send_rate = new_target_send_rate;
+            }
 
-        let min_target_send_rate = receiver.min_target_send_rate();
-        if receiver.allocated_send_rate * SEND_RATE_REALLOCATE_IMMEDIATELY_THRESHOLD
-            > new_target_send_rate
-        {
-            self.allocate_video_layers(
-                receiver_demux_id,
-                new_target_send_rate,
-                min_target_send_rate,
-                now,
-            );
+            let min_target_send_rate = receiver.min_target_send_rate();
+            if receiver.allocated_send_rate * SEND_RATE_REALLOCATE_IMMEDIATELY_THRESHOLD
+                > new_target_send_rate
+            {
+                self.allocate_video_layers(
+                    receiver_demux_id,
+                    new_target_send_rate,
+                    min_target_send_rate,
+                    now,
+                );
+            }
         }
 
         Ok(())
@@ -1835,7 +1956,9 @@ impl CallInner {
             .clients
             .iter()
             .filter_map(|receiver| {
-                if now > (receiver.send_rate_allocated + SEND_RATE_REALLOCATION_INTERVAL) {
+                if !receiver.is_svc_enabled()
+                    && now > (receiver.send_rate_allocated + SEND_RATE_REALLOCATION_INTERVAL)
+                {
                     Some((
                         receiver.demux_id,
                         receiver.target_send_rate,
@@ -1911,14 +2034,19 @@ impl CallInner {
             .find_client(receiver_demux_id)
             .expect("Client exists before trying to allocate target send rate");
 
+        // TODO(emir): figure out why this is getting called for an SVC target
+        if receiver.is_svc_enabled() {
+            return;
+        }
+
         // We have to collect these because we can't get a mutable ref to the receiver while getting
         // immutable refs to the senders.
         let allocatable_videos: Vec<AllocatableVideo> = self
             .clients
             .iter()
             .filter_map(|sender| {
-                if sender.demux_id == receiver_demux_id {
-                    // Don't send video to yourself
+                // Ignore SVC sources and the receiver itself
+                if sender.is_svc_enabled() || sender.demux_id == receiver_demux_id {
                     return None;
                 }
 
@@ -1988,7 +2116,6 @@ impl CallInner {
             .sum();
 
         receiver.allocated_height_by_sender_demux_id.clear();
-
         for sender_demux_id in sender_demux_ids {
             let desired_incoming_ssrc = allocated_video_by_sender_demux_id
                 .get(&sender_demux_id)
@@ -2010,7 +2137,6 @@ impl CallInner {
                 });
             forwarder.set_desired_ssrc(desired_incoming_ssrc);
         }
-
         receiver.target_send_rate = new_target_send_rate;
         receiver.requested_base_rate = requested_base_rate;
         receiver.ideal_send_rate = ideal_send_rate;
@@ -2024,6 +2150,15 @@ impl CallInner {
         key_frame_requests: &[rtp::KeyFrameRequest],
         now: Instant,
     ) -> Vec<(DemuxId, rtp::KeyFrameRequest)> {
+        for key_frame_request in key_frame_requests {
+            let video_sender_demux_id = DemuxId::from_ssrc(key_frame_request.ssrc);
+            if let Some(client) = self.find_client_mut(video_sender_demux_id) {
+                if let Some(scalable_video_state) = client.scalable_video_state.as_mut() {
+                    scalable_video_state.set_needs_keyframe_immediately();
+                }
+            }
+        }
+
         let requester = self.find_client_mut(requester_id);
         if requester.is_none() {
             return vec![];
@@ -2317,6 +2452,7 @@ impl CallInner {
             creator_id: call_info.creator_id.clone(),
             client_ids: self.get_client_ids(),
             pending_client_ids: self.get_pending_client_ids(include_pending_user_ids),
+            demux_ids_require_svc: self.get_demux_ids_require_svc(),
         }
     }
 
@@ -2527,18 +2663,30 @@ impl CallInner {
 
         let mut desired_incoming_ssrcs: HashSet<rtp::Ssrc> = HashSet::new();
         for receiver in &mut self.clients {
-            for video_forwarder in receiver.video_forwarder_by_sender_demux_id.values() {
-                if let Some(desired_incoming_ssrc) = video_forwarder.needs_key_frame() {
-                    desired_incoming_ssrcs.insert(desired_incoming_ssrc);
-                }
-            }
-
-            for (i, incoming_video) in receiver.incoming_video.iter().enumerate() {
-                if incoming_video.needs_resolution && incoming_video.rate() > Some(DataRate::ZERO) {
-                    let ssrc = LayerId::from_video_layer_index(i)
-                        .unwrap()
-                        .to_ssrc(receiver.demux_id);
+            if let Some(scalable_video_state) = receiver.scalable_video_state.as_ref() {
+                if scalable_video_state.needs_keyframe() {
+                    let ssrc = LayerId::Svc.to_ssrc(receiver.demux_id);
+                    trace!(
+                        "svc: {:?}: requesting keyframe: ssrc={ssrc}",
+                        receiver.demux_id
+                    );
                     desired_incoming_ssrcs.insert(ssrc);
+                }
+            } else {
+                for video_forwarder in receiver.video_forwarder_by_sender_demux_id.values() {
+                    if let Some(desired_incoming_ssrc) = video_forwarder.needs_key_frame() {
+                        desired_incoming_ssrcs.insert(desired_incoming_ssrc);
+                    }
+                }
+                for (i, incoming_video) in receiver.incoming_video.iter().enumerate() {
+                    if incoming_video.needs_resolution
+                        && incoming_video.rate() > Some(DataRate::ZERO)
+                    {
+                        let ssrc = LayerId::from_video_layer_index(i)
+                            .unwrap()
+                            .to_ssrc(receiver.demux_id);
+                        desired_incoming_ssrcs.insert(ssrc);
+                    }
                 }
             }
         }
@@ -2591,15 +2739,29 @@ impl CallInner {
     }
 
     /// Get the DemuxIds and opaque user IDs for each client.  These are needed for signaling.
-    pub fn get_client_ids(&self) -> Vec<(DemuxId, UserId)> {
+    fn get_client_ids(&self) -> Vec<(DemuxId, UserId)> {
         self.clients
             .iter()
             .map(|client| (client.demux_id, client.user_id.clone()))
             .collect()
     }
 
+    /// Get the list of DemuxIds that require SVC processing.
+    fn get_demux_ids_require_svc(&self) -> Vec<DemuxId> {
+        self.clients
+            .iter()
+            .filter_map(|client| {
+                if client.is_svc_enabled() {
+                    Some(client.demux_id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     /// Get the DemuxIds and user IDs for each pending client.  These are needed for signaling.
-    pub fn get_pending_client_ids(&self, include_user_ids: bool) -> Vec<(DemuxId, Option<UserId>)> {
+    fn get_pending_client_ids(&self, include_user_ids: bool) -> Vec<(DemuxId, Option<UserId>)> {
         self.pending_clients
             .iter()
             .map(|client| {
@@ -2669,6 +2831,160 @@ impl CallInner {
     fn call_tags_from(call_type: CallType, client_count: usize) -> StaticStrTagsRef {
         CALL_TAG_VALUES.get(&(call_type, client_count.into()))
     }
+
+    /// SVC tick processing.
+    fn svc_tick(&mut self, now: Instant) {
+        let mut alloc_candidates: SmallVec<[_; MAX_EXPECTED_CLIENTS]> = SmallVec::new();
+        for sender in &mut self.clients {
+            if let Some(scalable_video_state) = sender.scalable_video_state.as_mut() {
+                let ScalableVideoTickResult {
+                    updated_target_rate,
+                    ..
+                } = scalable_video_state.tick(now);
+                if let Some(updated_target_rate) = updated_target_rate {
+                    alloc_candidates.push((
+                        sender.demux_id,
+                        updated_target_rate,
+                        sender.outgoing_queue_drain_rate,
+                    ));
+                }
+            }
+        }
+        for (demux_id, rate, drain_rate) in alloc_candidates {
+            self.svc_allocate(demux_id, rate, drain_rate, false, now);
+        }
+    }
+
+    /// Allocates and updates decode targets for the receiver based on the given demux ID
+    /// and target data rate.
+    fn svc_allocate(
+        &mut self,
+        receiver_demux_id: DemuxId,
+        target_rate: DataRate,
+        outgoing_queue_drain_rate: DataRate,
+        force: bool,
+        now: Instant,
+    ) {
+        let Some(allocator) = self.allocators.get_mut(&receiver_demux_id) else {
+            warn!("svc: {receiver_demux_id:?} has no allocator");
+            return;
+        };
+        if !allocator.acquire(now, force) {
+            return;
+        }
+
+        let BasicAllocationStrategyResult {
+            ideal_send_rate,
+            requested_base_rate,
+            allocated_rate,
+            selected_decode_targets,
+        } = {
+            let decode_target_lists = self
+                .clients
+                .iter()
+                .map(|sender| {
+                    if sender.demux_id == receiver_demux_id {
+                        DecodeTargetInfoList::empty()
+                    } else {
+                        sender
+                            .scalable_video_state
+                            .as_ref()
+                            .map(|state| state.get_decode_targets())
+                            .unwrap_or(DecodeTargetInfoList::empty())
+                    }
+                })
+                .collect::<DecodeTargetInfoLists>();
+
+            let allocation_strategy = BasicAllocationStrategy {
+                demux_id: receiver_demux_id,
+                target_rate,
+                heights: None,
+                decode_target_lists,
+                outgoing_queue_drain_rate,
+                target_rate_allocation_ratio: TARGET_RATE_MINIMUM_ALLOCATION_RATIO,
+            };
+
+            allocation_strategy.allocate(allocator)
+        };
+
+        allocator.release(now);
+
+        for (client, decode_target) in self.clients.iter_mut().zip(selected_decode_targets) {
+            if let Some(scalable_video_state) = client.scalable_video_state.as_mut() {
+                if client.demux_id == receiver_demux_id {
+                    client.ideal_send_rate = ideal_send_rate;
+                    client.requested_base_rate = requested_base_rate;
+                    client.allocated_send_rate = allocated_rate;
+                    client.target_send_rate = target_rate;
+                    client.send_rate_allocated = now;
+                } else if let Err(e) = scalable_video_state
+                    .set_decode_target_for_receiver(receiver_demux_id, decode_target)
+                {
+                    error!("svc: {receiver_demux_id:?}: failed to update decode target: {e}");
+                }
+            }
+        }
+    }
+
+    /// Reallocates resources for scalable video coding (SVC) based on the target rates
+    /// of the clients currently connected to the system.
+    fn svc_reallocate(&mut self, now: Instant) {
+        let client_info = self
+            .clients
+            .iter()
+            .filter_map(|client| {
+                client.scalable_video_state.as_ref().map(|state| {
+                    (
+                        client.demux_id,
+                        client.outgoing_queue_drain_rate,
+                        state.get_target_rate(),
+                    )
+                })
+            })
+            .collect::<SmallVec<[_; MAX_EXPECTED_CLIENTS]>>();
+        for (demux_id, outgoing_queue_drain_rate, rate) in client_info {
+            self.svc_allocate(demux_id, rate, outgoing_queue_drain_rate, true, now);
+        }
+    }
+
+    /// Dispatches an RTP packet to the SVC handling logic.
+    ///
+    /// # Parameters
+    /// - `sender_demux_id`: The demux ID representing the sender of the RTP packet.
+    /// - `packet`: The received RTP packet.
+    /// - `ext_info`: Additional metadata about the packet.
+    /// - `now`: The current timestamp used to track when the packet was processed.
+    ///
+    /// # Returns
+    /// - `Ok(Vec<RtpToSend>)`: On success, returns a vector of RTP packets ready to be sent
+    ///   after processing (may be empty if no packets are generated).
+    /// - `Err(Error)`: On failure, returns an error indicating the reason for the failure
+    ///
+    /// # Errors
+    /// - `UnknownDemuxId(sender_demux_id)`: Returned when the provided sender demux ID does
+    ///   not correspond to any known client.
+    fn svc_dispatch_packet(
+        &mut self,
+        sender_demux_id: DemuxId,
+        packet: &rtp::Packet<&[u8]>,
+        ext_info: ExtendedPacketInfo,
+        now: Instant,
+    ) -> Result<Vec<RtpToSend>, Error> {
+        if ext_info.needs_allocation {
+            trace!("svc_dispatch_packet: packet from {sender_demux_id:?}: needs realloc");
+            self.svc_reallocate(now);
+        }
+        let sender = self
+            .find_client_mut(sender_demux_id)
+            .ok_or(UnknownDemuxId(sender_demux_id))?;
+        let state = sender
+            .scalable_video_state
+            .as_mut()
+            .expect("must be an SVC client");
+        state
+            .dispatch_packet(packet, ext_info, now)
+            .map_err(Error::from)
+    }
 }
 
 trait ReliableRtpSender {
@@ -2688,6 +3004,7 @@ struct NonParticipantClient {
     user_id: UserId,
     member_ciphertext: Option<UuidCiphertext>,
     is_admin: bool,
+    requires_svc: bool,
     region_relation: RegionRelation,
     user_agent: SignalUserAgent,
 
@@ -2723,9 +3040,9 @@ impl From<Client> for NonParticipantClient {
             user_id: client.user_id,
             member_ciphertext: client.member_ciphertext,
             is_admin: client.is_admin,
+            requires_svc: client.scalable_video_state.is_some(),
             region_relation: client.region_relation,
             user_agent: client.user_agent,
-
             mrp_stream: client.mrp_stream,
             next_server_to_client_data_rtp_seqnum: client.next_server_to_client_data_rtp_seqnum,
         }
@@ -2817,6 +3134,9 @@ struct Client {
 
     // Update with each proto send from server to client
     next_server_to_client_data_rtp_seqnum: rtp::FullSequenceNumber,
+
+    // Only present if the client is an SVC client
+    scalable_video_state: Option<ScalableVideoState>,
 }
 
 impl ReliableRtpSender for Client {
@@ -2893,7 +3213,46 @@ impl Client {
 
             next_server_to_client_data_rtp_seqnum: pending_client_info
                 .next_server_to_client_data_rtp_seqnum,
+
+            // SVC state
+            scalable_video_state: pending_client_info.requires_svc.then(|| {
+                ScalableVideoState::new(
+                    pending_client_info.demux_id,
+                    initial_target_send_rate,
+                    requested_max_send_rate,
+                    now,
+                )
+            }),
         }
+    }
+
+    fn handle_audio_level(&mut self, audio_level: audio::Level, now: Instant) -> bool {
+        time_scope_us!("calling.call.handle_rtp.audio_level");
+        self.incoming_audio_levels.push(audio_level, now);
+        // Active speaker is recalculated in tick()
+        // Forward some silent packets for comfort noise and PLC before
+        // starting to drop them
+        if audio_level == 0 {
+            if self.is_maybe_in_dtx {
+                return true;
+            }
+            // Take an even number of packets to account for TOC + refresh and check at least
+            // one second of DTX packets (>= 6) assuming two packets every 400ms interval.
+            const SILENT_PACKET_LIMIT: usize = 6;
+            let recent_audio_levels: u32 = self
+                .incoming_audio_levels
+                .iter_rev()
+                .take(SILENT_PACKET_LIMIT)
+                .map(|(level, _)| *level as u32)
+                .sum();
+            if recent_audio_levels == 0 {
+                self.is_maybe_in_dtx = true;
+                return true;
+            }
+        } else {
+            self.is_maybe_in_dtx = false;
+        }
+        false
     }
 
     fn update_incoming_video_rate_and_resolution(
@@ -3097,6 +3456,17 @@ impl Client {
             self.current_generation_min_target_send_rate,
             self.old_generation_min_target_send_rate,
         )
+    }
+
+    #[inline]
+    fn is_svc_enabled(&self) -> bool {
+        self.scalable_video_state.is_some()
+    }
+
+    fn get_template_dependency_structure(&self) -> Option<TemplateDependencyStructure> {
+        self.scalable_video_state
+            .as_ref()
+            .and_then(ScalableVideoState::get_template_dependency_structure)
     }
 }
 
@@ -5007,6 +5377,7 @@ mod call_tests {
             demux_id,
             user_id,
             false,
+            false,
             RegionRelation::Unknown,
             SignalUserAgent::Unknown,
             now,
@@ -5026,6 +5397,7 @@ mod call_tests {
             demux_id,
             user_id,
             true,
+            false,
             RegionRelation::Unknown,
             SignalUserAgent::Unknown,
             now,
@@ -5045,6 +5417,7 @@ mod call_tests {
             RtpData => 101,
             Audio => 102,
             Video0 | Video1 | Video2 => 108,
+            Svc => 109,
         };
         let timestamp = seqnum as rtp::TruncatedTimestamp;
         // This only gets filled in by the Connection.
@@ -5290,6 +5663,7 @@ mod call_tests {
                         .map(|demux| PeekDeviceInfo {
                             demux_id: Some(demux.as_u32()),
                             opaque_user_id: Some((demux.as_u32() >> 4).to_string()),
+                            requires_svc: Some(false),
                         })
                         .collect(),
                     pending_devices: pending_demux_ids
@@ -5297,6 +5671,7 @@ mod call_tests {
                         .map(|demux| PeekDeviceInfo {
                             demux_id: Some(demux.as_u32()),
                             opaque_user_id: Some((demux.as_u32() >> 4).to_string()),
+                            requires_svc: Some(false),
                         })
                         .collect(),
                     call_link_state: None,

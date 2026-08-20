@@ -56,6 +56,7 @@ pub struct JoinRequestWrapper {
     pub approved_users: Option<Vec<UserId>>,
     pub call_type: CallType,
     pub user_agent: SignalUserAgent,
+    pub requires_svc: bool,
 }
 
 pub struct JoinResponseWrapper {
@@ -77,6 +78,7 @@ pub struct JoinResponseWrapper {
 pub struct ClientInfo {
     pub opaque_user_id: Option<UserId>,
     pub demux_id: DemuxId,
+    pub requires_svc: bool,
 }
 
 pub struct ClientsResponseWrapper {
@@ -169,6 +171,7 @@ impl Frontend {
                         anyhow::Ok(ClientInfo {
                             opaque_user_id: Some(user_id),
                             demux_id: DemuxId::try_from(raw_demux_id)?,
+                            requires_svc: response.demux_ids_require_svc.contains(&raw_demux_id),
                         })
                     })
                     .collect::<Result<_>>()?;
@@ -179,6 +182,7 @@ impl Frontend {
                         anyhow::Ok(ClientInfo {
                             opaque_user_id: client.user_id,
                             demux_id: DemuxId::try_from(client.demux_id)?,
+                            requires_svc: response.demux_ids_require_svc.contains(&client.demux_id),
                         })
                     })
                     .collect::<Result<_>>()?;
@@ -307,6 +311,7 @@ impl Frontend {
                     approved_users: join_request.approved_users,
                     call_type: join_request.call_type,
                     user_agent: join_request.user_agent,
+                    requires_svc: join_request.requires_svc,
                 },
             )
             .await

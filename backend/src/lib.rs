@@ -24,4 +24,5 @@ pub mod region;
 pub mod rtp;
 pub mod sfu;
 pub mod signaling_server;
+pub mod svc;
 pub mod transportcc;

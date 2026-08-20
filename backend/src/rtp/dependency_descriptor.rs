@@ -18,6 +18,9 @@ use smallvec::SmallVec;
 
 use crate::bitstream::{BitstreamReader, BitstreamWriter};
 
+/// Maximum number of decode targets (as per spec).
+pub const MAX_DECODE_TARGETS: usize = 32;
+
 pub type DefaultBitstreamWriter = BitstreamWriter<128>;
 
 /// RTP header extension containing frame dependency metadata for scalable video streams.
@@ -86,7 +89,7 @@ pub struct ExtendedDescriptorFields {
 ///   targets are enabled.
 /// - **Available**: Explicitly specifies which decode targets are active via a custom bitmask.
 ///   Present when the active decode targets present bit is set in extended descriptor fields.
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
+#[derive(Debug, Default, PartialEq, Eq, Clone, Copy)]
 pub enum ActiveDecodeTargetsBitmask {
     #[default]
     Uninitialized,
@@ -98,6 +101,36 @@ pub enum ActiveDecodeTargetsBitmask {
         bitmask: u32,
         size: usize,
     },
+}
+
+impl ActiveDecodeTargetsBitmask {
+    pub fn is_uninitialized(&self) -> bool {
+        matches!(self, ActiveDecodeTargetsBitmask::Uninitialized)
+    }
+
+    pub fn is_all_implicitly_active(&self) -> bool {
+        matches!(self, ActiveDecodeTargetsBitmask::AllImplicitlyActive { .. })
+    }
+
+    pub fn is_available(&self) -> bool {
+        matches!(self, ActiveDecodeTargetsBitmask::Available { .. })
+    }
+
+    pub fn bitmask(&self) -> Option<u32> {
+        match self {
+            ActiveDecodeTargetsBitmask::Uninitialized => None,
+            ActiveDecodeTargetsBitmask::AllImplicitlyActive { bitmask, .. } => Some(*bitmask),
+            ActiveDecodeTargetsBitmask::Available { bitmask, .. } => Some(*bitmask),
+        }
+    }
+
+    pub fn size(&self) -> Option<usize> {
+        match self {
+            ActiveDecodeTargetsBitmask::Uninitialized => None,
+            ActiveDecodeTargetsBitmask::AllImplicitlyActive { size, .. } => Some(*size),
+            ActiveDecodeTargetsBitmask::Available { size, .. } => Some(*size),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

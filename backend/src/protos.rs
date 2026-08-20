@@ -16,6 +16,7 @@ mod extensions {
 
     impl From<CallSignalingInfo> for PeekInfo {
         fn from(value: CallSignalingInfo) -> Self {
+            let demux_ids_require_svc = value.demux_ids_require_svc;
             Self {
                 era_id: value.era_id.map(|era_id| hex::encode(era_id.as_slice())),
                 max_devices: None,
@@ -26,6 +27,7 @@ mod extensions {
                     .map(|(demux_id, user_id)| PeekDeviceInfo {
                         demux_id: Some(demux_id.as_u32()),
                         opaque_user_id: Some(user_id.into()),
+                        requires_svc: Some(demux_ids_require_svc.contains(&demux_id)),
                     })
                     .collect(),
                 pending_devices: value
@@ -34,6 +36,7 @@ mod extensions {
                     .map(|(demux_id, user_id)| PeekDeviceInfo {
                         demux_id: Some(demux_id.as_u32()),
                         opaque_user_id: user_id.map(|id| id.into()),
+                        requires_svc: Some(demux_ids_require_svc.contains(&demux_id)),
                     })
                     .collect(),
                 call_link_state: None,
@@ -43,6 +46,7 @@ mod extensions {
 
     impl From<&CallSignalingInfo> for PeekInfo {
         fn from(value: &CallSignalingInfo) -> Self {
+            let demux_ids_require_svc = &value.demux_ids_require_svc;
             Self {
                 era_id: value
                     .era_id
@@ -56,6 +60,7 @@ mod extensions {
                     .map(|(demux_id, user_id)| PeekDeviceInfo {
                         demux_id: Some(demux_id.as_u32()),
                         opaque_user_id: Some(user_id.clone().into()),
+                        requires_svc: Some(demux_ids_require_svc.contains(demux_id)),
                     })
                     .collect(),
                 pending_devices: value
@@ -64,6 +69,7 @@ mod extensions {
                     .map(|(demux_id, user_id)| PeekDeviceInfo {
                         demux_id: Some(demux_id.as_u32()),
                         opaque_user_id: user_id.clone().map(|id| id.into()),
+                        requires_svc: Some(demux_ids_require_svc.contains(demux_id)),
                     })
                     .collect(),
                 call_link_state: None,

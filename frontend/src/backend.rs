@@ -72,6 +72,9 @@ pub struct ClientsResponse {
     #[serde(rename = "demuxIds")]
     pub demux_ids: Vec<u32>,
 
+    #[serde(rename = "demuxIdsRequireSvc", default)]
+    pub demux_ids_require_svc: Vec<u32>,
+
     #[serde(rename = "pendingClients", default)]
     pub pending_clients: Vec<ClientInfo>,
 }
@@ -96,6 +99,7 @@ pub struct JoinRequest {
     pub approved_users: Option<Vec<String>>,
     pub call_type: CallType,
     pub user_agent: SignalUserAgent,
+    pub requires_svc: bool,
 }
 
 #[derive(Deserialize, Debug)]
@@ -374,7 +378,8 @@ mod tests {
                 "roomId": GROUP_ID_1,
                 "approvedUsers": ["A", "B"],
                 "callType": "GroupV2",
-                "userAgent": "Unknown"
+                "userAgent": "Unknown",
+                "requiresSvc": false,
             }),
             serde_json::to_value(JoinRequest {
                 user_id: USER_ID_1.to_string(),
@@ -388,7 +393,8 @@ mod tests {
                 room_id: RoomId::from(GROUP_ID_1),
                 approved_users: Some(vec!["A".to_string(), "B".to_string()]),
                 call_type: CallType::GroupV2,
-                user_agent: SignalUserAgent::Unknown
+                user_agent: SignalUserAgent::Unknown,
+                requires_svc: false,
             })
             .unwrap()
         )

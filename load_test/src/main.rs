@@ -99,6 +99,7 @@ fn main() -> Result<()> {
         ice_pwd: ice_client_pwd.to_string(),
         dhe_public_key: client_dhe_public_key.encode_hex(),
         hkdf_extra_info: None,
+        requires_svc: None,
     };
 
     info!("joining via PUT {}", uri);

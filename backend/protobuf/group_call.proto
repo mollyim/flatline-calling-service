@@ -94,6 +94,7 @@ message SfuToDevice {
     message PeekDeviceInfo {
       optional fixed32 demux_id = 1;
       optional string opaque_user_id = 2;
+      optional bool requires_svc = 3;
     }
 
     enum CallLinkRestrictions {

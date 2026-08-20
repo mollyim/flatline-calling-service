@@ -59,6 +59,7 @@ pub struct JoinRequest {
     pub ice_pwd: String,
     pub dhe_public_key: String,
     pub hkdf_extra_info: Option<String>,
+    pub requires_svc: bool,
 }
 
 #[derive(Serialize, Debug)]
@@ -339,6 +340,7 @@ async fn join_conference(
         join_request.ice_pwd,
         client_dhe_public_key,
         client_hkdf_extra_info,
+        join_request.requires_svc,
         Region::Unset,
         config.new_clients_require_approval,
         call_type,

@@ -646,6 +646,7 @@ impl Sfu {
         client_ice_pwd: String,
         client_dhe_public_key: DhePublicKey,
         client_hkdf_extra_info: Vec<u8>,
+        client_requires_svc: bool,
         region: Region,
         new_clients_require_approval: bool,
         call_type: CallType,
@@ -745,9 +746,10 @@ impl Sfu {
             demux_id,
             user_id.clone(),
             is_admin,
+            client_requires_svc,
             region_relation,
             user_agent,
-            Instant::now(), // Now after taking the lock
+            Instant::now(),
         );
 
         if client_status == ClientStatus::Rejected {
@@ -756,7 +758,11 @@ impl Sfu {
 
         // ACKs can be sent from any SSRC that the client is configured to send with, which includes the
         // video base layer, so use that.
-        let ack_ssrc = call::LayerId::Video0.to_ssrc(demux_id);
+        let ack_ssrc = if client_requires_svc {
+            call::LayerId::Svc.to_ssrc(demux_id)
+        } else {
+            call::LayerId::Video0.to_ssrc(demux_id)
+        };
 
         let server_secret = EphemeralSecret::random_from_rng(&mut UnwrapErr(SysRng));
         let server_dhe_public_key = PublicKey::from(&server_secret).to_bytes();
@@ -849,10 +855,19 @@ impl Sfu {
             trace!("looks like rtp");
             time_scope_us!("calling.sfu.handle_packet.rtp");
 
+            let incoming_connection_id = incoming_connection.id();
+            let call = incoming_connection.call();
+            let dependency_structure =
+                call.get_template_dependency_structure(incoming_connection_id.demux_id);
+
             let incoming_rtp = {
                 time_scope_us!("calling.sfu.handle_packet.rtp.in_incoming_connection_lock");
                 incoming_connection
-                    .handle_rtp_packet(incoming_packet, None, Instant::now())
+                    .handle_rtp_packet(
+                        incoming_packet,
+                        dependency_structure.as_ref(),
+                        Instant::now(),
+                    )
                     .map_err(SfuError::ConnectionError)?
             };
 
@@ -861,15 +876,11 @@ impl Sfu {
                 None => return Ok(Default::default()),
             };
 
-            let incoming_connection_id = incoming_connection.id();
-
             trace!("rtp packet:");
             trace!("  sender_addr: {}", sender_addr);
             trace!("  sender demux ID: {:?}", incoming_connection_id.demux_id);
             trace!("  ssrc: {}", incoming_rtp.ssrc());
             trace!("  seqnum: {}", incoming_rtp.seqnum());
-
-            let call = incoming_connection.call();
 
             let outgoing_rtp = {
                 time_scope_us!("calling.sfu.handle_packet.rtp.in_call_lock");
@@ -1463,6 +1474,7 @@ pub struct CallSignalingInfo {
     pub creator_id: UserId,
     pub client_ids: Vec<(DemuxId, UserId)>,
     pub pending_client_ids: Vec<(DemuxId, Option<UserId>)>,
+    pub demux_ids_require_svc: Vec<DemuxId>,
 }
 
 #[cfg(test)]
@@ -1531,6 +1543,7 @@ mod sfu_tests {
             client_ice_pwd,
             client_dhe_public_key,
             vec![],
+            false,
             Region::Unset,
             false,
             CallType::GroupV2,

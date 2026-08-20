@@ -71,17 +71,16 @@ pub struct ClientInfo {
     demux_id: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     user_id: Option<String>,
+    requires_svc: bool,
 }
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientsResponse {
     #[serde(rename = "endpointIds")]
-    pub user_ids: Vec<String>, // These are user IDs.
-
-    // Parallels the user_ids list.
-    pub demux_ids: Vec<u32>,
-
+    pub user_ids: Vec<String>,
+    pub demux_ids: Vec<u32>, // Parallels the user_ids list
+    pub demux_ids_require_svc: Vec<u32>,
     pub pending_clients: Vec<ClientInfo>,
 }
 
@@ -106,6 +105,8 @@ pub struct JoinRequest {
     pub room_id: Option<RoomId>,
     #[serde_as(as = "Option<Vec<call::UserIdAsStr>>")]
     pub approved_users: Option<Vec<UserId>>,
+    #[serde(default)]
+    pub requires_svc: bool,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -265,17 +266,24 @@ async fn get_clients(
             .into_iter()
             .map(|(demux_id, user_id)| (demux_id.as_u32(), user_id.into()))
             .unzip();
+        let demux_ids_require_svc = signaling
+            .demux_ids_require_svc
+            .into_iter()
+            .map(|demux_id| demux_id.as_u32())
+            .collect::<Vec<_>>();
         let pending_clients = signaling
             .pending_client_ids
             .into_iter()
             .map(|(demux_id, user_id)| ClientInfo {
                 demux_id: demux_id.as_u32(),
                 user_id: user_id.map(String::from),
+                requires_svc: demux_ids_require_svc.contains(&demux_id.as_u32()),
             })
             .collect();
         let response = ClientsResponse {
             user_ids,
             demux_ids,
+            demux_ids_require_svc,
             pending_clients,
         };
 
@@ -338,6 +346,7 @@ async fn join(
         request.client_ice_pwd,
         client_dhe_public_key,
         client_hkdf_extra_info,
+        request.requires_svc,
         region,
         request.new_clients_require_approval,
         request.call_type,
@@ -554,6 +563,7 @@ mod signaling_server_tests {
                 client_ice_pwd.to_string(),
                 client_dhe_pub_key,
                 vec![],
+                false,
                 Region::Unset,
                 false,
                 CallType::GroupV2,
@@ -588,6 +598,7 @@ mod signaling_server_tests {
                 client_ice_pwd.to_string(),
                 client_dhe_pub_key,
                 vec![],
+                false,
                 Region::Unset,
                 true,
                 CallType::Adhoc,
@@ -761,7 +772,7 @@ mod signaling_server_tests {
         assert_eq!(
             &body[..],
             format!(
-                r#"{{"endpointIds":["{}"],"demuxIds":[{}],"pendingClients":[]}}"#,
+                r#"{{"endpointIds":["{}"],"demuxIds":[{}],"demuxIdsRequireSvc":[],"pendingClients":[]}}"#,
                 validate_user_id(USER_ID_1).unwrap().as_str(),
                 DEMUX_ID_1.as_u32(),
             )
@@ -796,7 +807,7 @@ mod signaling_server_tests {
         assert_eq!(
             &body[..],
             format!(
-                r#"{{"endpointIds":["{}","{}"],"demuxIds":[{},{}],"pendingClients":[]}}"#,
+                r#"{{"endpointIds":["{}","{}"],"demuxIds":[{},{}],"demuxIdsRequireSvc":[],"pendingClients":[]}}"#,
                 validate_user_id(USER_ID_1).unwrap().as_str(),
                 validate_user_id(USER_ID_2).unwrap().as_str(),
                 DEMUX_ID_1.as_u32(),
@@ -824,7 +835,7 @@ mod signaling_server_tests {
         assert_eq!(
             &body[..],
             format!(
-                r#"{{"endpointIds":["{}"],"demuxIds":[{}],"pendingClients":[]}}"#,
+                r#"{{"endpointIds":["{}"],"demuxIds":[{}],"demuxIdsRequireSvc":[],"pendingClients":[]}}"#,
                 validate_user_id(USER_ID_2).unwrap().as_str(),
                 DEMUX_ID_2.as_u32(),
             )
@@ -850,7 +861,7 @@ mod signaling_server_tests {
             .unwrap();
         assert_eq!(
             &body[..],
-            br#"{"endpointIds":[],"demuxIds":[],"pendingClients":[]}"#
+            br#"{"endpointIds":[],"demuxIds":[],"demuxIdsRequireSvc":[],"pendingClients":[]}"#
         );
     }
 
@@ -908,7 +919,7 @@ mod signaling_server_tests {
         assert_eq!(
             &body[..],
             format!(
-                r#"{{"endpointIds":["{}"],"demuxIds":[{}],"pendingClients":[]}}"#,
+                r#"{{"endpointIds":["{}"],"demuxIds":[{}],"demuxIdsRequireSvc":[],"pendingClients":[]}}"#,
                 validate_user_id(USER_ID_1).unwrap().as_str(),
                 DEMUX_ID_1.as_u32(),
             )
@@ -943,7 +954,7 @@ mod signaling_server_tests {
         assert_eq!(
             &body[..],
             format!(
-                r#"{{"endpointIds":["{}"],"demuxIds":[{}],"pendingClients":[{{"demuxId":{}}}]}}"#,
+                r#"{{"endpointIds":["{}"],"demuxIds":[{}],"demuxIdsRequireSvc":[],"pendingClients":[{{"demuxId":{},"requiresSvc":false}}]}}"#,
                 validate_user_id(USER_ID_1).unwrap().as_str(),
                 DEMUX_ID_1.as_u32(),
                 DEMUX_ID_2.as_u32(),
@@ -973,7 +984,7 @@ mod signaling_server_tests {
         assert_eq!(
             &body[..],
             format!(
-                r#"{{"endpointIds":["{}"],"demuxIds":[{}],"pendingClients":[{{"demuxId":{}}}]}}"#,
+                r#"{{"endpointIds":["{}"],"demuxIds":[{}],"demuxIdsRequireSvc":[],"pendingClients":[{{"demuxId":{},"requiresSvc":false}}]}}"#,
                 validate_user_id(USER_ID_1).unwrap().as_str(),
                 DEMUX_ID_1.as_u32(),
                 DEMUX_ID_2.as_u32(),
@@ -1003,7 +1014,7 @@ mod signaling_server_tests {
         assert_eq!(
             &body[..],
             format!(
-                r#"{{"endpointIds":["{}"],"demuxIds":[{}],"pendingClients":[{{"demuxId":{},"userId":"{}"}}]}}"#,
+                r#"{{"endpointIds":["{}"],"demuxIds":[{}],"demuxIdsRequireSvc":[],"pendingClients":[{{"demuxId":{},"userId":"{}","requiresSvc":false}}]}}"#,
                 validate_user_id(USER_ID_1)
                     .unwrap()
                     .as_str(),
@@ -1046,6 +1057,7 @@ mod signaling_server_tests {
                             is_admin: false,
                             room_id: Some(ROOM_ID.into()),
                             approved_users: None,
+                            requires_svc: false,
                         })
                         .unwrap(),
                     ))
@@ -1076,6 +1088,7 @@ mod signaling_server_tests {
                             is_admin: false,
                             room_id: Some(ROOM_ID.into()),
                             approved_users: None,
+                            requires_svc: false,
                         })
                         .unwrap(),
                     ))
@@ -1106,6 +1119,7 @@ mod signaling_server_tests {
                             is_admin: false,
                             room_id: None,
                             approved_users: None,
+                            requires_svc: false,
                         })
                         .unwrap(),
                     ))
@@ -1136,6 +1150,7 @@ mod signaling_server_tests {
                             is_admin: false,
                             room_id: None,
                             approved_users: None,
+                            requires_svc: false,
                         })
                         .unwrap(),
                     ))
@@ -1166,6 +1181,7 @@ mod signaling_server_tests {
                             is_admin: false,
                             room_id: None,
                             approved_users: None,
+                            requires_svc: false,
                         })
                         .unwrap(),
                     ))
@@ -1196,6 +1212,7 @@ mod signaling_server_tests {
                             is_admin: false,
                             room_id: None,
                             approved_users: None,
+                            requires_svc: false,
                         })
                         .unwrap(),
                     ))
@@ -1245,6 +1262,7 @@ mod signaling_server_tests {
                             is_admin: false,
                             room_id: None,
                             approved_users: None,
+                            requires_svc: false,
                         })
                         .unwrap(),
                     ))
@@ -1273,6 +1291,7 @@ mod signaling_server_tests {
                 "roomId": ROOM_ID,
                 "userAgent": Some(SignalUserAgent::Internal),
                 "approvedUsers": ["A", "B"],
+                "requiresSvc": false,
             }),
             serde_json::to_value(JoinRequest {
                 user_id: USER_ID_1.to_string(),
@@ -1290,6 +1309,7 @@ mod signaling_server_tests {
                     UserId::from("A".to_string()),
                     UserId::from("B".to_string())
                 ]),
+                requires_svc: false,
             })
             .unwrap()
         )
