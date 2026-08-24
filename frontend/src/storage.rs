@@ -466,9 +466,11 @@ impl Storage for DynamoDb {
     }
 
     async fn get_or_add_call_record(&self, call: CallRecord) -> Result<CallRecord, StorageError> {
-        let call_as_item = UpsertableItem::with_defaults(
-            to_item(&call).expect("failed to convert CallRecord to item"),
-        );
+        let call_as_item = UpsertableItem::with_defaults(to_item(&call).map_err(|err| {
+            StorageError::UnexpectedError(
+                anyhow::Error::from(err).context("failed to convert CallRecord to item"),
+            )
+        })?);
         let response = self
             .client
             .update_item()
@@ -490,7 +492,14 @@ impl Storage for DynamoDb {
 
         match response {
             Ok(response) => Ok(from_item(
-                response.attributes().expect("requested attributes").clone(),
+                response
+                    .attributes()
+                    .ok_or_else(|| {
+                        StorageError::UnexpectedError(anyhow!(
+                            "expected non-None attributes because return_values was not None"
+                        ))
+                    })?
+                    .clone(),
             )
             .context("failed to convert item to CallRecord")?),
             Err(err) => Err(StorageError::UnexpectedError(
@@ -688,9 +697,12 @@ impl Storage for DynamoDb {
     ) -> Result<CallLinkState, CallLinkUpdateError> {
         // Serialize the new attributes into an "upsertable" item. An item is a a hash map that
         // maps attribute names to their corresponding values (instances of AttributeValue).
-        let mut upsertable_item = UpsertableItem::with_updates(
-            to_item(&new_attributes).expect("failed to convert CallLinkUpdate to item"),
-        );
+        let mut upsertable_item =
+            UpsertableItem::with_updates(to_item(&new_attributes).map_err(|e| {
+                CallLinkUpdateError::UnexpectedError(
+                    anyhow::Error::from(e).context("failed to convert CallLinkUpdate to item"),
+                )
+            })?);
 
         let must_exist;
         let condition;
@@ -705,7 +717,11 @@ impl Storage for DynamoDb {
                 epoch,
                 SystemTime::now(),
             ))
-            .expect("failed to convert CallLinkState to item");
+            .map_err(|e| {
+                CallLinkUpdateError::UnexpectedError(
+                    anyhow::Error::from(e).context("failed to convert CallLinkState to item"),
+                )
+            })?;
             must_exist = false;
             condition = concat!(
                 "(adminPasskey = :adminPasskey OR attribute_not_exists(adminPasskey)) AND ",
@@ -744,7 +760,14 @@ impl Storage for DynamoDb {
 
         match response {
             Ok(response) => Ok(from_item(
-                response.attributes().expect("requested attributes").clone(),
+                response
+                    .attributes()
+                    .ok_or_else(|| {
+                        CallLinkUpdateError::UnexpectedError(anyhow!(
+                            "expected non-None attributes because return_values was not None"
+                        ))
+                    })?
+                    .clone(),
             )
             .context("failed to convert item to CallLinkState")?),
             Err(err) => match err.into_service_error() {
@@ -883,11 +906,19 @@ impl Storage for DynamoDb {
         let expiration_attribute_value: AttributeValue = serde_dynamo::to_attribute_value(
             SerializeAsWrap::<_, serde_with::TimestampSeconds<i64>>::new(&expiration),
         )
-        .expect("failed to convert timestamp to attribute");
+        .map_err(|e| {
+            CallLinkUpdateError::UnexpectedError(
+                anyhow::Error::from(e).context("failed to convert timestamp to attribute"),
+            )
+        })?;
         let delete_at_attribute_value: AttributeValue = serde_dynamo::to_attribute_value(
             SerializeAsWrap::<_, serde_with::TimestampSeconds<i64>>::new(&delete_at),
         )
-        .expect("failed to convert timestamp to attribute");
+        .map_err(|e| {
+            CallLinkUpdateError::UnexpectedError(
+                anyhow::Error::from(e).context("failed to convert timestamp to attribute"),
+            )
+        })?;
 
         let builder = self
             .client
