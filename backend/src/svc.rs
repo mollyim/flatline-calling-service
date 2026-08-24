@@ -10,10 +10,10 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     ops::{Deref, DerefMut},
+    sync::LazyLock,
 };
 
 use calling_common::{DataRate, DataRateTracker, DemuxId, Duration, Instant};
-use lazy_static::lazy_static;
 use log::{error, info, trace, warn};
 use metrics::event;
 use smallvec::SmallVec;
@@ -220,10 +220,9 @@ impl DerefMut for DecodeTargetInfoList {
 
 impl DecodeTargetInfoList {
     pub fn empty() -> &'static Self {
-        lazy_static! {
-            static ref EMPTY_DECODE_TARGET_LIST: DecodeTargetInfoList =
-                DecodeTargetInfoList::default();
-        }
+        static EMPTY_DECODE_TARGET_LIST: LazyLock<DecodeTargetInfoList> =
+            LazyLock::new(DecodeTargetInfoList::default);
+
         &EMPTY_DECODE_TARGET_LIST
     }
 }
