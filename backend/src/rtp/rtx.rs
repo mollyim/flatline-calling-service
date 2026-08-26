@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use calling_common::{Duration, Instant, TwoGenerationCache};
 use metrics::event;
 
-use super::{types::*, Packet};
+use super::{Packet, types::*};
 use crate::rtp::tcc;
 
 const RTX_PAYLOAD_TYPE_OFFSET: PayloadType = 10;

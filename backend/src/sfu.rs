@@ -19,8 +19,8 @@ use std::{
 use anyhow::Result;
 use base64::Engine;
 use calling_common::{
-    CallType, ClientStatus, DataRate, DataSize, DemuxId, Duration, Instant, RoomId,
-    SignalUserAgent, SystemTime, DUMMY_DEMUX_ID,
+    CallType, ClientStatus, DUMMY_DEMUX_ID, DataRate, DataSize, DemuxId, Duration, Instant, RoomId,
+    SignalUserAgent, SystemTime,
 };
 use hkdf::Hkdf;
 use log::*;
@@ -36,7 +36,7 @@ use thiserror::Error;
 use x25519_dalek::{EphemeralSecret, PublicKey};
 
 use crate::{
-    call::{self, Call, CallSizeBucket, CreateCallArgs, LoggableCallId, CALL_TAG_VALUES},
+    call::{self, CALL_TAG_VALUES, Call, CallSizeBucket, CreateCallArgs, LoggableCallId},
     config,
     connection::{
         self, Connection, ConnectionRates, CreateConnectionArgs, HandleRtcpResult, PacketToSend,
@@ -663,13 +663,11 @@ impl Sfu {
         trace!("  {:25}{}", "client_ice_ufrag:", client_ice_ufrag);
         trace!(
             "  {:25}{:?}",
-            "client_dhe_public_key:",
-            client_dhe_public_key
+            "client_dhe_public_key:", client_dhe_public_key
         );
         trace!(
             "  {:25}{:?}",
-            "client_hkdf_extra_info:",
-            client_hkdf_extra_info
+            "client_hkdf_extra_info:", client_hkdf_extra_info
         );
         trace!("  {:25}{:?}", "demux_id:", demux_id);
 
@@ -957,14 +955,14 @@ impl Sfu {
 
             let outgoing_key_frame_requests = {
                 time_scope_us!("calling.sfu.handle_packet.rtcp.in_call_lock");
-                if let Some(new_target_send_rate) = new_target_send_rate {
-                    if let Err(err) = call.set_target_send_rate(
+                if let Some(new_target_send_rate) = new_target_send_rate
+                    && let Err(err) = call.set_target_send_rate(
                         incoming_connection_id.demux_id,
                         new_target_send_rate,
                         rtcp_now,
-                    ) {
-                        debug!("Failed to set target send rate: {:?}", err);
-                    }
+                    )
+                {
+                    debug!("Failed to set target send rate: {:?}", err);
                 }
                 call.handle_key_frame_requests(
                     incoming_connection_id.demux_id,
@@ -1173,33 +1171,35 @@ impl Sfu {
                                 (0, 0)
                             };
 
-                            let _ = write!(diagnostic_string, " {{ demux_id: {}, incoming_heights: ({}, {}, {}), incoming_rates: ({}, {}, {}), incoming_padding: {}, incoming_audio: {}, incoming_rtx: {}, incoming_non_media: {}, incoming_discard: {}, min_target: {}, target: {}, requested_base: {}, ideal: {}, allocated: {}, queue_drain: {}, max_requested_height: {}, rtt_ms: {}, stun_rtt_ms: {}, video_rate: {}, audio_rate: {}, rtx_rate: {}, padding_rate: {}, non_media_rate: {} }}",
-                                  client.demux_id.as_u32(),
-                                  client.video0_incoming_height.unwrap_or_default().as_u16(),
-                                  client.video1_incoming_height.unwrap_or_default().as_u16(),
-                                  client.video2_incoming_height.unwrap_or_default().as_u16(),
-                                  client.video0_incoming_rate.unwrap_or_default().as_kbps(),
-                                  client.video1_incoming_rate.unwrap_or_default().as_kbps(),
-                                  client.video2_incoming_rate.unwrap_or_default().as_kbps(),
-                                  client.connection_rates.incoming_padding_rate.as_kbps(),
-                                  client.connection_rates.incoming_audio_rate.as_kbps(),
-                                  client.connection_rates.incoming_rtx_rate.as_kbps(),
-                                  client.connection_rates.incoming_non_media_rate.as_kbps(),
-                                  client.connection_rates.incoming_discard_rate.as_kbps(),
-                                  client.min_target_send_rate.as_kbps(),
-                                  client.target_send_rate.as_kbps(),
-                                  client.requested_base_rate.as_kbps(),
-                                  client.ideal_send_rate.as_kbps(),
-                                  client.allocated_send_rate.as_kbps(),
-                                  client.outgoing_queue_drain_rate.as_kbps(),
-                                  client.max_requested_height.unwrap_or_default().as_u16(),
-                                  rtt,
-                                  stun_rtt,
-                                  client.connection_rates.video_rate.as_kbps(),
-                                  client.connection_rates.audio_rate.as_kbps(),
-                                  client.connection_rates.rtx_rate.as_kbps(),
-                                  client.connection_rates.padding_rate.as_kbps(),
-                                  client.connection_rates.non_media_rate.as_kbps(),
+                            let _ = write!(
+                                diagnostic_string,
+                                " {{ demux_id: {}, incoming_heights: ({}, {}, {}), incoming_rates: ({}, {}, {}), incoming_padding: {}, incoming_audio: {}, incoming_rtx: {}, incoming_non_media: {}, incoming_discard: {}, min_target: {}, target: {}, requested_base: {}, ideal: {}, allocated: {}, queue_drain: {}, max_requested_height: {}, rtt_ms: {}, stun_rtt_ms: {}, video_rate: {}, audio_rate: {}, rtx_rate: {}, padding_rate: {}, non_media_rate: {} }}",
+                                client.demux_id.as_u32(),
+                                client.video0_incoming_height.unwrap_or_default().as_u16(),
+                                client.video1_incoming_height.unwrap_or_default().as_u16(),
+                                client.video2_incoming_height.unwrap_or_default().as_u16(),
+                                client.video0_incoming_rate.unwrap_or_default().as_kbps(),
+                                client.video1_incoming_rate.unwrap_or_default().as_kbps(),
+                                client.video2_incoming_rate.unwrap_or_default().as_kbps(),
+                                client.connection_rates.incoming_padding_rate.as_kbps(),
+                                client.connection_rates.incoming_audio_rate.as_kbps(),
+                                client.connection_rates.incoming_rtx_rate.as_kbps(),
+                                client.connection_rates.incoming_non_media_rate.as_kbps(),
+                                client.connection_rates.incoming_discard_rate.as_kbps(),
+                                client.min_target_send_rate.as_kbps(),
+                                client.target_send_rate.as_kbps(),
+                                client.requested_base_rate.as_kbps(),
+                                client.ideal_send_rate.as_kbps(),
+                                client.allocated_send_rate.as_kbps(),
+                                client.outgoing_queue_drain_rate.as_kbps(),
+                                client.max_requested_height.unwrap_or_default().as_u16(),
+                                rtt,
+                                stun_rtt,
+                                client.connection_rates.video_rate.as_kbps(),
+                                client.connection_rates.audio_rate.as_kbps(),
+                                client.connection_rates.rtx_rate.as_kbps(),
+                                client.connection_rates.padding_rate.as_kbps(),
+                                client.connection_rates.non_media_rate.as_kbps(),
                             );
                         }
 
@@ -1404,8 +1404,7 @@ impl Sfu {
                 if let Some(connection) = self
                     .connections
                     .get_connection_from_id(&outgoing_connection_id)
-                {
-                    if let Some(dequeue_time) = connection.configure_congestion_control(
+                    && let Some(dequeue_time) = connection.configure_congestion_control(
                         googcc::Request {
                             base: send_rate_allocation_info.requested_base_rate,
                             ideal: send_rate_allocation_info.ideal_send_rate,
@@ -1419,9 +1418,9 @@ impl Sfu {
                             padding_ssrc: send_rate_allocation_info.padding_ssrc,
                         },
                         now,
-                    ) {
-                        dequeues_to_schedule.push((dequeue_time, connection));
-                    }
+                    )
+                {
+                    dequeues_to_schedule.push((dequeue_time, connection));
                 }
             }
 
@@ -1431,13 +1430,11 @@ impl Sfu {
                 if let Some(outgoing_connection) = self
                     .connections
                     .get_connection_from_id(&outgoing_connection_id)
-                {
-                    if let Some(key_frame_request) =
+                    && let Some(key_frame_request) =
                         outgoing_connection.send_key_frame_request(key_frame_request, now)
-                    {
-                        packets_to_send.push(key_frame_request);
-                    };
-                }
+                {
+                    packets_to_send.push(key_frame_request);
+                };
             }
 
             // Send server->client messages like active speaker updates calculated by Call.tick().
@@ -1446,14 +1443,13 @@ impl Sfu {
                 if let Some(outgoing_connection) = self
                     .connections
                     .get_connection_from_id(&outgoing_connection_id)
-                {
-                    if let Some(dequeue_time) = outgoing_connection.send_or_enqueue_rtp(
+                    && let Some(dequeue_time) = outgoing_connection.send_or_enqueue_rtp(
                         outgoing_rtp,
                         &mut packets_to_send,
                         now,
-                    ) {
-                        dequeues_to_schedule.push((dequeue_time, outgoing_connection));
-                    }
+                    )
+                {
+                    dequeues_to_schedule.push((dequeue_time, outgoing_connection));
                 }
             }
         }

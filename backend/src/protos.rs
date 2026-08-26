@@ -8,8 +8,8 @@ include!(concat!(env!("OUT_DIR"), "/group_call.rs"));
 mod extensions {
     use crate::{
         protos::{
-            sfu_to_device::{peek_info::PeekDeviceInfo, PeekInfo},
             DeviceToSfu, SfuToDevice,
+            sfu_to_device::{PeekInfo, peek_info::PeekDeviceInfo},
         },
         sfu::CallSignalingInfo,
     };

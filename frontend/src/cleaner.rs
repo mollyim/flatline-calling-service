@@ -12,7 +12,7 @@ use log::*;
 use metrics::{event, metric_config::Timer, start_timer_us};
 use parking_lot::Mutex;
 use rand::RngExt;
-use tokio::sync::{oneshot::Receiver, Semaphore};
+use tokio::sync::{Semaphore, oneshot::Receiver};
 
 use crate::{
     api::call_links::{
@@ -171,7 +171,7 @@ pub async fn start(config: &'static config::Config, ender_rx: Receiver<()>) -> R
 
 #[cfg(test)]
 mod tests {
-    use calling_common::{random_hex_string, RoomId};
+    use calling_common::{RoomId, random_hex_string};
 
     use super::*;
     use crate::config::default_test_config;

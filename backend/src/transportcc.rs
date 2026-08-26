@@ -7,15 +7,15 @@
 //! https://datatracker.ietf.org/doc/html/draft-holmer-rmcat-transport-wide-cc-extensions-01
 
 use std::{
-    collections::{btree_map, BTreeMap},
+    collections::{BTreeMap, btree_map},
     ops::{Add, AddAssign},
 };
 
-use byteorder::{ReadBytesExt, BE};
-use calling_common::{DataSize, Duration, Instant, TwoGenerationCache, Writable, Writer, U24};
+use byteorder::{BE, ReadBytesExt};
+use calling_common::{DataSize, Duration, Instant, TwoGenerationCache, U24, Writable, Writer};
 use log::*;
 
-pub use crate::rtp::{expand_seqnum, FullSequenceNumber, TruncatedSequenceNumber};
+pub use crate::rtp::{FullSequenceNumber, TruncatedSequenceNumber, expand_seqnum};
 
 /// A remote instant, internally represented as a duration since a remote-chosen epoch.
 ///

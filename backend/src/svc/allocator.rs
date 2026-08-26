@@ -7,7 +7,7 @@ use std::cmp::{max, min};
 
 use calling_common::{DataRate, DemuxId, Duration, Instant, VideoHeight};
 use log::warn;
-use smallvec::{smallvec, SmallVec};
+use smallvec::{SmallVec, smallvec};
 use thiserror::Error;
 
 use crate::{
@@ -511,11 +511,11 @@ mod tests {
     use crate::{
         rtp::Resolution,
         svc::{
+            DecodeTargetInfo, DecodeTargetInfoList,
             allocator::{
                 AllocationError, AllocationResult, Allocator, DefaultAllocator,
                 SelectedDecodeTargets,
             },
-            DecodeTargetInfo, DecodeTargetInfoList,
         },
     };
 

@@ -14,24 +14,24 @@ use std::{
     net::SocketAddr,
     str::{self, FromStr},
     sync::{
-        atomic::{AtomicBool, AtomicU8, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicU8, Ordering},
     },
     time::Duration,
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use axum::{
+    Extension, Json, Router,
     extract::{Path, State},
     http::StatusCode,
     middleware,
     response::IntoResponse,
     routing::{get, post},
-    Extension, Json, Router,
 };
 use axum_extra::{
-    headers::{self, Header},
     TypedHeader,
+    headers::{self, Header},
 };
 use calling_common::{CallType, DemuxId, RoomId, SignalUserAgent};
 use hex::{FromHex, ToHex};

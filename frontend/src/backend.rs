@@ -5,7 +5,7 @@
 
 use std::net::{IpAddr, SocketAddr};
 
-use anyhow::{anyhow, Context, Error};
+use anyhow::{Context, Error, anyhow};
 use async_trait::async_trait;
 use calling_common::{CallType, DemuxId, RoomId, SignalUserAgent};
 use log::*;
@@ -13,7 +13,7 @@ use log::*;
 use mockall::{automock, predicate::*};
 use reqwest::{StatusCode, Url};
 use serde::{Deserialize, Serialize};
-use tokio::time::{error::Elapsed, Duration};
+use tokio::time::{Duration, error::Elapsed};
 
 use crate::{config, frontend, load_balancer::LoadBalancer};
 
@@ -190,13 +190,13 @@ impl BackendHttpClient {
             (Some(_), None, None) => {
                 return Err(anyhow!(
                     "must supply oauth2-token-url with backend-list-instances-url"
-                ))
+                ));
             }
             (None, _, Some(ips)) => Some(LoadBalancer::new_with_ips(ips.to_vec()).await?),
             (_, _, _) => {
                 return Err(anyhow!(
-                "no more than one of backend-ip and backend-list-instances-url may be configured"
-            ))
+                    "no more than one of backend-ip and backend-list-instances-url may be configured"
+                ));
             }
         };
 
@@ -211,10 +211,10 @@ impl BackendHttpClient {
 #[async_trait]
 impl Backend for BackendHttpClient {
     async fn select_ip(&self) -> Result<String, BackendError> {
-        if let Some(load_balancer) = &self.load_balancer {
-            if let Ok(ip) = load_balancer.select_ip().await {
-                return Ok(ip);
-            }
+        if let Some(load_balancer) = &self.load_balancer
+            && let Ok(ip) = load_balancer.select_ip().await
+        {
+            return Ok(ip);
         }
         let result = self.get_info().await.map(|i| i.backend_direct_ip);
         if self.load_balancer.is_some() && self.base_url.is_some() && result.is_ok() {
@@ -229,7 +229,7 @@ impl Backend for BackendHttpClient {
             None => {
                 return Err(BackendError::UnexpectedError(anyhow!(
                     "calling_server_url not set but fallback attempted"
-                )))
+                )));
             }
             Some(url) => format!("{}/v1/info", url),
         };
@@ -318,10 +318,10 @@ impl Backend for BackendHttpClient {
             demux_id.as_u32(),
         );
 
-        if let Some(approved_users) = &join_request.approved_users {
-            if approved_users.len() > 100 {
-                warn!("more than 100 approved users in join");
-            }
+        if let Some(approved_users) = &join_request.approved_users
+            && approved_users.len() > 100
+        {
+            warn!("more than 100 approved users in join");
         }
 
         let response = self

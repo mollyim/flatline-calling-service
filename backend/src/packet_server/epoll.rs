@@ -5,7 +5,7 @@
 
 use std::{
     cmp::Ordering,
-    collections::{hash_map, HashMap, VecDeque},
+    collections::{HashMap, VecDeque, hash_map},
     ffi::c_int,
     future::Future,
     io::{self, IoSlice, Read, Write},
@@ -18,15 +18,15 @@ use std::{
         unix::io::{AsRawFd, RawFd},
     },
     sync::{
-        atomic::{AtomicU64, Ordering as AtomicOrdering},
         Arc,
+        atomic::{AtomicU64, Ordering as AtomicOrdering},
     },
     thread,
 };
 
 use anyhow::Result;
 use byteorder::{BigEndian, ByteOrder};
-use calling_common::{try_scoped, Instant};
+use calling_common::{Instant, try_scoped};
 use core_affinity::CoreId;
 use log::*;
 use metrics::{metric_config::TimingOptions, *};
@@ -37,7 +37,7 @@ use nix::{
 };
 use parking_lot::{Mutex, RwLock};
 use rustls::{ServerConfig, ServerConnection};
-use unique_id::{sequence::SequenceGenerator, Generator};
+use unique_id::{Generator, sequence::SequenceGenerator};
 
 use crate::{
     connection::Connection,
@@ -1305,10 +1305,7 @@ impl AsFd for ConnectedSocket {
                 let fd = lock.stream.as_fd();
                 // SAFETY: we're using this value immediately with nix::sys::epoll::Epoll::add.
                 // epoll gracefully handles closed FDs
-                unsafe {
-                    let laundered_fd = BorrowedFd::borrow_raw(fd.as_raw_fd());
-                    laundered_fd
-                }
+                unsafe { BorrowedFd::borrow_raw(fd.as_raw_fd()) }
             }
         }
     }
@@ -1353,10 +1350,10 @@ impl ConnectedSocket {
         match &self.socket {
             Socket::Udp { socket, .. } => {
                 let ret = socket.send(buf).map(|_| ());
-                if let Err(ref err) = ret {
-                    if err.kind() == io::ErrorKind::WouldBlock {
-                        event!("calling.udp.epoll.udp_send.would_block");
-                    }
+                if let Err(ref err) = ret
+                    && err.kind() == io::ErrorKind::WouldBlock
+                {
+                    event!("calling.udp.epoll.udp_send.would_block");
                 }
                 ret
             }
@@ -1497,13 +1494,13 @@ impl<T: AsRawFd> ConnectionMap<T> {
             }
             hash_map::Entry::Vacant(entry) => entry.insert(socket),
         };
-        if !is_udp {
-            if let hash_map::Entry::Vacant(entry) = self.inactive_ttls.entry(peer_addr) {
-                if let Some(current_tick) = current_tick {
-                    entry.insert(TCP_INACTIVE_CONNECTION_TTL_TICKS + current_tick);
-                } else {
-                    error!("current_tick was not provided to get_or_insert_connected when adding new tcp socket")
-                }
+        if !is_udp && let hash_map::Entry::Vacant(entry) = self.inactive_ttls.entry(peer_addr) {
+            if let Some(current_tick) = current_tick {
+                entry.insert(TCP_INACTIVE_CONNECTION_TTL_TICKS + current_tick);
+            } else {
+                error!(
+                    "current_tick was not provided to get_or_insert_connected when adding new tcp socket"
+                )
             }
         }
         inserted_socket
@@ -1561,14 +1558,14 @@ impl<T: AsRawFd> ConnectionMap<T> {
     /// healthy
     fn mark_as_active(&mut self, peer_addr: &SocketLocator, f: impl FnOnce(&mut T)) {
         self.inactive_ttls.remove(peer_addr);
-        if let Some(entry) = self.by_peer_addr.get_mut(peer_addr) {
-            if let ConnectionState::New(fd) = entry {
-                f(self
-                    .by_fd
-                    .get_mut(fd)
-                    .expect("fd in by_peer_addr should be in by_fd"));
-                *entry = ConnectionState::Connected(*fd);
-            }
+        if let Some(entry) = self.by_peer_addr.get_mut(peer_addr)
+            && let ConnectionState::New(fd) = entry
+        {
+            f(self
+                .by_fd
+                .get_mut(fd)
+                .expect("fd in by_peer_addr should be in by_fd"));
+            *entry = ConnectionState::Connected(*fd);
         }
     }
 

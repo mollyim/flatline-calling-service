@@ -5,7 +5,7 @@
 
 use std::cmp::{max, min};
 
-use calling_common::{exponential_moving_average, Duration, Instant, RingBuffer};
+use calling_common::{Duration, Instant, RingBuffer, exponential_moving_average};
 use log::*;
 
 use crate::transportcc::{Ack, RemoteInstant};
@@ -559,7 +559,7 @@ impl Iterator for AcksAtRegularIntervals {
 mod calculate_ack_deltas_tests {
     use super::{
         accumulate_ack_groups_tests::{
-            ack_groups_from_departure_and_arrival, BURST_THRESHOLD, NEW_GROUP_INTERVAL,
+            BURST_THRESHOLD, NEW_GROUP_INTERVAL, ack_groups_from_departure_and_arrival,
         },
         *,
     };
@@ -824,7 +824,10 @@ impl DelaySlopeCalculator {
                             "ack group history only contains one set of arrival times: {:?}",
                             history
                         );
-                        debug_assert!(false, "after the first group, the history should never have all arrival times the same");
+                        debug_assert!(
+                            false,
+                            "after the first group, the history should never have all arrival times the same"
+                        );
                         None
                     }
                 } else {
@@ -1110,7 +1113,7 @@ impl DelayDirectionPipeline {
 
 #[cfg(test)]
 mod calculate_delay_directions_from_slopes_tests {
-    use rand::{rngs::StdRng, RngExt, SeedableRng};
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
 
     use super::*;
 
@@ -1678,36 +1681,46 @@ mod calculate_delay_directions_from_slopes_tests {
         let mut stream = results.chunks(batch_size);
         println!("{:?}", results);
         // First batch is increasing.
-        assert!(stream
-            .next()
-            .expect("stream not ended")
-            .iter()
-            .any(|(_now, direction)| direction == &DelayDirection::Increasing));
+        assert!(
+            stream
+                .next()
+                .expect("stream not ended")
+                .iter()
+                .any(|(_now, direction)| direction == &DelayDirection::Increasing)
+        );
         // Second batch is also increasing, but should raise the threshold...
-        assert!(stream
-            .next()
-            .expect("stream not ended")
-            .iter()
-            .any(|(_now, direction)| direction == &DelayDirection::Increasing));
+        assert!(
+            stream
+                .next()
+                .expect("stream not ended")
+                .iter()
+                .any(|(_now, direction)| direction == &DelayDirection::Increasing)
+        );
         // ...so that the third batch is not considered increasing.
-        assert!(stream
-            .next()
-            .expect("stream not ended")
-            .iter()
-            .all(|(_now, direction)| direction == &DelayDirection::Steady));
+        assert!(
+            stream
+                .next()
+                .expect("stream not ended")
+                .iter()
+                .all(|(_now, direction)| direction == &DelayDirection::Steady)
+        );
         // But after many rounds of a lower value...
         let mut stream = stream.skip(14);
-        assert!(stream
-            .next()
-            .expect("stream not ended")
-            .iter()
-            .all(|(_now, direction)| direction == &DelayDirection::Steady));
+        assert!(
+            stream
+                .next()
+                .expect("stream not ended")
+                .iter()
+                .all(|(_now, direction)| direction == &DelayDirection::Steady)
+        );
         // ...the last batch should be increasing again.
-        assert!(stream
-            .next()
-            .expect("stream not ended")
-            .iter()
-            .any(|(_now, direction)| direction == &DelayDirection::Increasing));
+        assert!(
+            stream
+                .next()
+                .expect("stream not ended")
+                .iter()
+                .any(|(_now, direction)| direction == &DelayDirection::Increasing)
+        );
     }
 
     // From WebRTC's OveruseDetectorExperimentTest::DoesntAdaptToSpikes.
@@ -1731,9 +1744,11 @@ mod calculate_delay_directions_from_slopes_tests {
         let stream_output = calculate_delay_directions_from_slopes(slope_tuples);
 
         // After a few slopes, the increase should be detected.
-        assert!(stream_output
-            .iter()
-            .any(|(_now, direction)| direction == &DelayDirection::Increasing));
+        assert!(
+            stream_output
+                .iter()
+                .any(|(_now, direction)| direction == &DelayDirection::Increasing)
+        );
 
         // Make sure that the spike does not update the threshold,
         // i.e. even the slopes after the spikes are still considered increasing.

@@ -283,15 +283,15 @@ impl Candidate {
         now: Instant,
     ) -> Result<(), Error> {
         // Ignore responses to retransmits.
-        if let Some(tid) = self.ping_previous_transaction_id.as_ref() {
-            if *tid == transaction_id {
-                return Ok(());
-            }
+        if let Some(tid) = self.ping_previous_transaction_id.as_ref()
+            && *tid == transaction_id
+        {
+            return Ok(());
         }
         match &self.ping_transaction_id {
             None => return Err(Error::ReceivedUnexpectedResponse),
             Some(tid) if *tid != transaction_id => {
-                return Err(Error::ReceivedResponseWithInvalidTransactionId)
+                return Err(Error::ReceivedResponseWithInvalidTransactionId);
             }
             _ => (),
         }
@@ -596,8 +596,7 @@ impl CandidateSelector {
     ) -> Result<(), Error> {
         trace!(
             "received STUN ping response from {}: {}",
-            source_addr,
-            response
+            source_addr, response
         );
 
         if let Some(error_code) = response.error_code() {
@@ -681,11 +680,11 @@ mod tests {
     };
 
     use calling_common::{Duration, Instant};
-    use rand::{rngs::StdRng, RngExt, SeedableRng};
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
 
-    use super::{CandidateSelector, Config, RttEstimator, ScoringValues, PING_MAX_RETRANSMITS};
+    use super::{CandidateSelector, Config, PING_MAX_RETRANSMITS, RttEstimator, ScoringValues};
     use crate::{
-        candidate_selector::{IceCredentials, State, PING_RTO, PING_RTO_RM},
+        candidate_selector::{IceCredentials, PING_RTO, PING_RTO_RM, State},
         connection::PacketToSend,
         ice::{BindingRequest, BindingResponse, StunPacketBuilder, TransactionId},
         packet_server::SocketLocator,
@@ -823,16 +822,16 @@ mod tests {
         }
 
         fn tick(&mut self, now: Instant) {
-            if let Some(current_ping_response_time) = self.current_ping_response_time {
-                if current_ping_response_time < now {
-                    self.current_ping_response_time = None;
-                    let req = self.current_ping.take().unwrap();
-                    let req = BindingRequest::from_buffer_without_sanity_check(&req);
-                    let mut selector = self.selector.borrow_mut();
-                    let res = create_ping_response(req, &selector);
-                    let res = BindingResponse::from_buffer_without_sanity_check(&res);
-                    let _ = selector.handle_ping_response(self.address, res, now);
-                }
+            if let Some(current_ping_response_time) = self.current_ping_response_time
+                && current_ping_response_time < now
+            {
+                self.current_ping_response_time = None;
+                let req = self.current_ping.take().unwrap();
+                let req = BindingRequest::from_buffer_without_sanity_check(&req);
+                let mut selector = self.selector.borrow_mut();
+                let res = create_ping_response(req, &selector);
+                let res = BindingResponse::from_buffer_without_sanity_check(&res);
+                let _ = selector.handle_ping_response(self.address, res, now);
             }
         }
     }

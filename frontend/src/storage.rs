@@ -5,11 +5,12 @@
 
 use std::{collections::HashMap, path::PathBuf, time::SystemTime};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use async_trait::async_trait;
 use aws_config::BehaviorVersion;
 use aws_credential_types::Credentials;
 use aws_sdk_dynamodb::{
+    Client, Config,
     operation::{
         delete_item::DeleteItemError, transact_write_items::TransactWriteItemsError,
         update_item::UpdateItemError,
@@ -18,7 +19,6 @@ use aws_sdk_dynamodb::{
         AttributeValue, BatchStatementErrorCodeEnum, ConditionCheck, Delete, ReturnValue, Select,
         TransactWriteItem,
     },
-    Client, Config,
 };
 use aws_smithy_async::rt::sleep::default_async_sleep;
 use aws_smithy_types::{retry::RetryConfigBuilder, timeout::TimeoutConfig};
@@ -29,8 +29,8 @@ use metrics::{metric_config::Timer, *};
 #[cfg(test)]
 use mockall::{automock, predicate::*};
 use serde::{Deserialize, Serialize};
-use serde_dynamo::{from_item, to_item, Item};
-use serde_with::{ser::SerializeAsWrap, serde_as, Bytes};
+use serde_dynamo::{Item, from_item, to_item};
+use serde_with::{Bytes, ser::SerializeAsWrap, serde_as};
 use tokio::{io::AsyncWriteExt, sync::oneshot::Receiver};
 
 use crate::{api::call_links::CallLinkEpochGenerator, config, frontend::UserId};
@@ -141,8 +141,7 @@ impl CallLinkState {
     const RECORD_TYPE: &'static str = "CallLinkState";
     const GET_CALL_LINK_ATTRIBUTES_WITHOUT_APPROVED_USERS: &'static str =
         "adminPasskey,zkparams,restrictions,encryptedName,revoked,expiration,deleteAt,epoch";
-    const GET_CALL_LINK_ATTRIBUTES: &'static str =
-        "adminPasskey,zkparams,restrictions,encryptedName,revoked,expiration,deleteAt,epoch,approvedUsers";
+    const GET_CALL_LINK_ATTRIBUTES: &'static str = "adminPasskey,zkparams,restrictions,encryptedName,revoked,expiration,deleteAt,epoch,approvedUsers";
 
     pub const EXPIRATION_TIMER: std::time::Duration =
         std::time::Duration::from_secs(60 * 60 * 24 * 90);
@@ -596,13 +595,12 @@ impl Storage for DynamoDb {
                 // reason, then we can assume that the batch was previously deleted.
                 let err = err.into_service_error();
                 if let TransactWriteItemsError::TransactionCanceledException(ref cancellation) = err
-                {
-                    if cancellation.cancellation_reasons().iter().all(|reason| {
+                    && cancellation.cancellation_reasons().iter().all(|reason| {
                         reason.code()
                             == Some(BatchStatementErrorCodeEnum::ConditionalCheckFailed.as_str())
-                    }) {
-                        return Ok(());
-                    }
+                    })
+                {
+                    return Ok(());
                 }
 
                 Err(StorageError::UnexpectedError(err.into()))
@@ -864,10 +862,11 @@ impl Storage for DynamoDb {
             Err(err) => match err.into_service_error() {
                 TransactWriteItemsError::TransactionCanceledException(ref cancellation) => {
                     let reasons = cancellation.cancellation_reasons();
-                    if let Some(code) = reasons[0].code() {
-                        if code == BatchStatementErrorCodeEnum::ConditionalCheckFailed.as_str() {
-                            // disambiguate check error
-                            return match self.get_call_link(room_id, epoch).await {
+                    if let Some(code) = reasons[0].code()
+                        && code == BatchStatementErrorCodeEnum::ConditionalCheckFailed.as_str()
+                    {
+                        // disambiguate check error
+                        return match self.get_call_link(room_id, epoch).await {
                                 Ok(Some(_)) => Err(CallLinkDeleteError::AdminPasskeyDidNotMatch),
                                 Ok(None) => Err(CallLinkDeleteError::RoomDoesNotExist),
                                 Err(inner_err) => Err(CallLinkDeleteError::UnexpectedError(
@@ -875,12 +874,11 @@ impl Storage for DynamoDb {
                                         .context("failed to check for existing room after failing to transact_write_items in storage for delete_call_link"),
                                 ))
                             };
-                        }
                     }
-                    if let Some(code) = reasons[1].code() {
-                        if code == BatchStatementErrorCodeEnum::ConditionalCheckFailed.as_str() {
-                            return Err(CallLinkDeleteError::CallRecordConflict);
-                        }
+                    if let Some(code) = reasons[1].code()
+                        && code == BatchStatementErrorCodeEnum::ConditionalCheckFailed.as_str()
+                    {
+                        return Err(CallLinkDeleteError::CallRecordConflict);
                     }
                     Err(CallLinkDeleteError::UnexpectedError(anyhow::Error::from(
                         cancellation.clone(),
@@ -1023,10 +1021,10 @@ impl Storage for DynamoDb {
         // matching records, regardless of their type. Call records do *not* have the epoch field
         // and, therefore, they always get excluded. *If* we could use the record type field in the
         // filter expression we could work around this issue, but, alas, we cannot.
-        if let Some(link_state) = &link_state {
-            if link_state.epoch != epoch {
-                return Ok((None, None));
-            }
+        if let Some(link_state) = &link_state
+            && link_state.epoch != epoch
+        {
+            return Ok((None, None));
         }
 
         Ok((link_state, call_record))
@@ -1247,7 +1245,7 @@ mod tests {
             error::SdkError,
             types::{DeleteRequest, PutRequest, WriteRequest},
         };
-        use base64::{engine::general_purpose::STANDARD, Engine};
+        use base64::{Engine, engine::general_purpose::STANDARD};
         use futures::FutureExt;
 
         use super::*;
@@ -1783,8 +1781,8 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn test_get_call_link_and_record_with_no_call_and_approved_users_with_epoch(
-        ) -> Result<()> {
+        async fn test_get_call_link_and_record_with_no_call_and_approved_users_with_epoch()
+        -> Result<()> {
             test_get_call_link_and_record_with_no_call_and_approved_users(
                 StaticCallLinkEpochGenerator::GENERATED_EPOCH,
             )
@@ -1792,8 +1790,8 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn test_get_call_link_and_record_with_no_call_and_approved_users_without_epoch(
-        ) -> Result<()> {
+        async fn test_get_call_link_and_record_with_no_call_and_approved_users_without_epoch()
+        -> Result<()> {
             test_get_call_link_and_record_with_no_call_and_approved_users(None).await
         }
 
@@ -1924,8 +1922,8 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn test_get_call_link_and_record_with_call_and_approved_users_with_epoch(
-        ) -> Result<()> {
+        async fn test_get_call_link_and_record_with_call_and_approved_users_with_epoch()
+        -> Result<()> {
             test_get_call_link_and_record_with_call_and_approved_users(
                 StaticCallLinkEpochGenerator::GENERATED_EPOCH,
             )
@@ -1933,8 +1931,8 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn test_get_call_link_and_record_with_call_and_approved_users_without_epoch(
-        ) -> Result<()> {
+        async fn test_get_call_link_and_record_with_call_and_approved_users_without_epoch()
+        -> Result<()> {
             test_get_call_link_and_record_with_call_and_approved_users(None).await
         }
 

@@ -6,11 +6,11 @@
 use std::{fmt::Debug, num::ParseIntError, sync::Arc, time::SystemTime};
 
 use anyhow::Result;
-use axum::{extract::State, response::IntoResponse, Extension, Json};
+use axum::{Extension, Json, extract::State, response::IntoResponse};
 use axum_extra::{
+    TypedHeader,
     headers::{self, Header, HeaderName, HeaderValue},
     typed_header::TypedHeaderRejection,
-    TypedHeader,
 };
 use bincode::Options;
 use http::StatusCode;
@@ -612,10 +612,10 @@ pub mod tests {
     use std::sync::LazyLock;
 
     use axum::body::Body;
-    use base64::{engine::general_purpose::STANDARD, Engine};
+    use base64::{Engine, engine::general_purpose::STANDARD};
     use calling_common::Duration;
     use hex::FromHex;
-    use http::{header, Request};
+    use http::{Request, header};
     use mockall::predicate::*;
     use tower::ServiceExt;
     use zkgroup::call_links::{

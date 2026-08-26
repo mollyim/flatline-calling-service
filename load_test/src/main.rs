@@ -14,23 +14,23 @@ use std::{
     ops::DerefMut,
     process::{self, exit},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, Once,
+        atomic::{AtomicBool, Ordering},
     },
     thread::sleep,
     time::SystemTime,
 };
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use byteorder::{BigEndian, ByteOrder};
 use calling_backend::{
-    call::{DemuxIdExt, CLIENT_SERVER_DATA_PAYLOAD_TYPE, CLIENT_SERVER_DATA_SSRC},
+    call::{CLIENT_SERVER_DATA_PAYLOAD_TYPE, CLIENT_SERVER_DATA_SSRC, DemuxIdExt},
     ice::{self, BindingRequest, BindingResponse, StunPacketBuilder, TransactionId},
     protos::{
-        device_to_sfu::{video_request_message::VideoRequest, VideoRequestMessage},
         DeviceToSfu,
+        device_to_sfu::{VideoRequestMessage, video_request_message::VideoRequest},
     },
-    rtp::{self, new_master_key_material, Packet, OPUS_PAYLOAD_TYPE},
+    rtp::{self, OPUS_PAYLOAD_TYPE, Packet, new_master_key_material},
     transportcc::Ack,
     *,
 };
@@ -846,7 +846,7 @@ impl Stats {
             (self.bytes_audio as f64) * 8.0 / 1000.0 / interval,
             (self.bytes_video as f64) * 8.0 / 1000.0 / interval,
             (self.bytes_padding as f64) * 8.0 / 1000.0 / interval,
-            (self.bytes_discard as f64)  * 8.0 / 1000.0 / interval,
+            (self.bytes_discard as f64) * 8.0 / 1000.0 / interval,
             (video_delay_avg as f64) / 65.536,
             (video_delay_min as f64) / 65.536,
             (video_delay_max as f64) / 65.536,

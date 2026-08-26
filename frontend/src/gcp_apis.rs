@@ -5,7 +5,7 @@
 
 use std::{collections::HashMap, net::Ipv4Addr, str::FromStr};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use log::*;
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;

@@ -12,11 +12,11 @@ use std::{
 use log::{error, info};
 #[cfg(test)]
 use mockall::automock;
-use object_store::{self, gcp, GetOptions, ObjectStore};
+use object_store::{self, GetOptions, ObjectStore, gcp};
 use serde::Deserialize;
 use thiserror::Error;
 use tokio::{
-    sync::{watch, Mutex},
+    sync::{Mutex, watch},
     task::JoinHandle,
 };
 
@@ -141,12 +141,12 @@ where
             Ok(result) => result,
             Err(object_store::Error::NotModified { .. }) => return Ok(None),
             Err(object_store::Error::NotFound { path, .. }) => {
-                return Err(DynamicConfigError::ConfigNotFound { path })
+                return Err(DynamicConfigError::ConfigNotFound { path });
             }
             Err(err) => {
                 return Err(DynamicConfigError::UnknownConfigRefreshError(
                     anyhow::anyhow!(err),
-                ))
+                ));
             }
         };
 
@@ -292,7 +292,9 @@ where
                 }
                 Ok(None) => {
                     if self.last_updated.is_none() {
-                        error!("Dynamic config reported as unchanged, but never got a config before. Did you pass in a fresh DynamicConfigFetcher?");
+                        error!(
+                            "Dynamic config reported as unchanged, but never got a config before. Did you pass in a fresh DynamicConfigFetcher?"
+                        );
                         self.handle_error(DynamicConfigError::BadConfigFetcherState);
                     }
                 }
@@ -346,19 +348,19 @@ pub fn start_config_manager<C: DynamicConfig>(
 mod tests {
     use std::{
         ops::{Deref, Mul},
-        sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender, TryRecvError},
+        sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError, channel},
     };
 
     use once_cell::sync::Lazy;
     use serde::{Deserialize, Serialize};
     use tokio::{
         io::AsyncWriteExt,
-        sync::{oneshot, Mutex},
+        sync::{Mutex, oneshot},
         time::sleep,
     };
 
     use super::{
-        start_config_manager, DynamicConfigError, DynamicConfigManager, MockDynamicConfigFetcher,
+        DynamicConfigError, DynamicConfigManager, MockDynamicConfigFetcher, start_config_manager,
     };
     use crate::Duration;
 

@@ -294,7 +294,7 @@ mod estimate_acked_rates_from_groups_tests {
     use std::cmp::Ordering;
 
     use calling_common::AbsDiff;
-    use rand::{rngs::StdRng, RngExt, SeedableRng};
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
 
     use super::*;
 

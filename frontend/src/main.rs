@@ -12,7 +12,7 @@ use std::{
 };
 
 use anyhow::Result;
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use calling_common::Duration;
 use calling_frontend::{
     api::{
@@ -34,7 +34,7 @@ use parking_lot::Mutex;
 use rlimit::increase_nofile_limit;
 use tokio::{
     runtime,
-    signal::unix::{signal, SignalKind},
+    signal::unix::{SignalKind, signal},
     sync::{mpsc, oneshot},
 };
 
@@ -88,7 +88,9 @@ pub async fn wait_for_signal(mut canceller: mpsc::Receiver<()>) {
 }
 
 fn main() -> Result<()> {
-    std::env::set_var("RUST_BACKTRACE", "full");
+    unsafe {
+        std::env::set_var("RUST_BACKTRACE", "full");
+    }
 
     // Initialize logging.
     env_logger::Builder::from_env(
@@ -111,7 +113,9 @@ fn main() -> Result<()> {
     {
         match option_env!("RUSTFLAGS") {
             None => {
-                warn!("for optimal performance, build with RUSTFLAGS=\"-C target-cpu=native\" or better");
+                warn!(
+                    "for optimal performance, build with RUSTFLAGS=\"-C target-cpu=native\" or better"
+                );
             }
             Some(rust_flags) => {
                 info!("built with: RUSTFLAGS=\"{}\"", rust_flags);

@@ -7,11 +7,11 @@ use std::{net::SocketAddr, str, sync::Arc, time::SystemTime};
 
 use anyhow::Result;
 use axum::{
+    Extension, Json,
     extract::{OriginalUri, Query, State},
     response::{IntoResponse, Redirect},
-    Extension, Json,
 };
-use axum_extra::{headers::UserAgent, typed_header::TypedHeaderRejection, TypedHeader};
+use axum_extra::{TypedHeader, headers::UserAgent, typed_header::TypedHeaderRejection};
 use calling_common::{CallType, SignalUserAgent};
 use hex::ToHex;
 use http::StatusCode;
@@ -24,7 +24,7 @@ use zkgroup::call_links::CallLinkAuthCredentialPresentation;
 
 use crate::{
     api::call_links::{
-        self, verify_auth_credential_against_zkparams, CallLinkEpoch, CallLinkState, RoomId,
+        self, CallLinkEpoch, CallLinkState, RoomId, verify_auth_credential_against_zkparams,
     },
     authenticator::UserAuthorization,
     frontend::{Frontend, JoinRequestWrapper, UserId},
@@ -329,8 +329,9 @@ pub async fn join(
                         let call = match call {
                             Some(call) => call,
                             None => {
-                                let get_or_create_timer =
-                        start_timer_us!("calling.frontend.api.v2.join_by_room_id.get_or_create_call_record.timed");
+                                let get_or_create_timer = start_timer_us!(
+                                    "calling.frontend.api.v2.join_by_room_id.get_or_create_call_record.timed"
+                                );
                                 let can_create = true;
                                 let call = frontend
                                     .get_or_create_call_link_call_record(
@@ -343,7 +344,9 @@ pub async fn join(
                                 // We do this in a separate tokio task to avoid additional latency for the user trying to start a call.
                                 let frontend_for_task = frontend.clone();
                                 tokio::spawn(async move {
-                                    time_scope_us!("calling.frontend.api.v2.join_by_room_id.reset_call_link_expiration_in_background.timed");
+                                    time_scope_us!(
+                                        "calling.frontend.api.v2.join_by_room_id.reset_call_link_expiration_in_background.timed"
+                                    );
                                     match frontend_for_task
                                         .storage
                                         .reset_call_link_expiration(&room_id, epoch, now)
@@ -353,7 +356,9 @@ pub async fn join(
                                             debug!("successfully reset call link expiration")
                                         }
                                         Err(err) => {
-                                            warn!("failed to reset call link expiration on create: {err}");
+                                            warn!(
+                                                "failed to reset call link expiration on create: {err}"
+                                            );
                                         }
                                     }
                                 });
@@ -442,12 +447,12 @@ pub mod api_server_v2_tests {
     };
 
     use axum::body::Body;
-    use base64::{engine::general_purpose::STANDARD, Engine};
+    use base64::{Engine, engine::general_purpose::STANDARD};
     use calling_common::{CallLinkEpoch, DemuxId, RoomId};
     use hex::{FromHex, ToHex};
     use hmac::{KeyInit, Mac};
-    use http::{header, Request};
-    use mockall::{predicate::*, Sequence};
+    use http::{Request, header};
+    use mockall::{Sequence, predicate::*};
     use tower::ServiceExt;
 
     use super::*;
@@ -455,14 +460,14 @@ pub mod api_server_v2_tests {
         api::{
             app,
             call_links::tests::{
+                ADMIN_PASSKEY, USER_ID_1 as CALL_LINKS_USER_ID_1, USER_ID_1_DOUBLE_ENCODED,
+                USER_ID_2_DOUBLE_ENCODED, USER_ID_3, USER_ID_3_DOUBLE_ENCODED, X_EPOCH, X_ROOM_ID,
                 call_link_state_with_approved, create_authorization_header_for_creator,
                 create_authorization_header_for_user as create_call_links_authorization_header_for_user,
-                default_call_link_state, default_call_link_state_with_epoch, ADMIN_PASSKEY,
-                USER_ID_1 as CALL_LINKS_USER_ID_1, USER_ID_1_DOUBLE_ENCODED,
-                USER_ID_2_DOUBLE_ENCODED, USER_ID_3, USER_ID_3_DOUBLE_ENCODED, X_EPOCH, X_ROOM_ID,
+                default_call_link_state, default_call_link_state_with_epoch,
             },
         },
-        authenticator::{Authenticator, HmacSha256, GV2_AUTH_MATCH_LIMIT},
+        authenticator::{Authenticator, GV2_AUTH_MATCH_LIMIT, HmacSha256},
         backend::{self, BackendError, MockBackend},
         config,
         frontend::{FrontendIdGenerator, MockIdGenerator},
@@ -3997,8 +4002,7 @@ pub mod api_server_v2_tests {
 
     #[tokio::test]
     async fn test_room_id_request_deserialize() {
-        let serialized =
-            "{\"iceUfrag\":\"client-ufrag\",\"icePwd\":\"client-pwd\",\"dhePublicKey\":\"f924028e9b8021b77eb97b36f1d43e63\"}";
+        let serialized = "{\"iceUfrag\":\"client-ufrag\",\"icePwd\":\"client-pwd\",\"dhePublicKey\":\"f924028e9b8021b77eb97b36f1d43e63\"}";
         println!("serialized {:?}", serialized);
         let deserialized: Result<JoinRequest, serde_json::Error> = serde_json::from_str(serialized);
         println!("deserialized {:?}", deserialized);

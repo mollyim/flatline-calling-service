@@ -7,7 +7,7 @@
 name = "calling_common"
 version = "0.0.0"
 authors = ["Calling Team <callingteam@signal.org>"]
-edition = "2021"
+edition = "2024"
 description = "Common calling library."
 license = "AGPL-3.0-only"
 

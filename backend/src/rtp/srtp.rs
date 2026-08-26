@@ -6,8 +6,8 @@
 use std::convert::TryInto;
 
 use aes::{
-    cipher::{BlockCipherEncrypt, KeyInit},
     Aes128,
+    cipher::{BlockCipherEncrypt, KeyInit},
 };
 use zeroize::Zeroizing;
 

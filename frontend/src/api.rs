@@ -13,16 +13,16 @@ use std::{
 
 use anyhow::Result;
 use axum::{
+    Extension, Router,
     extract::{MatchedPath, Request, State},
     middleware::{self, Next},
     response::IntoResponse,
     routing::get,
-    Extension, Router,
 };
 use axum_extra::TypedHeader;
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use calling_common::{CallType, SignalUserAgent};
-use http::{header, Method, StatusCode};
+use http::{Method, StatusCode, header};
 use log::*;
 use metrics::{
     event,
@@ -178,10 +178,10 @@ async fn authorize(
 
     let user_agent = get_user_agent(&req)?;
 
-    if let Some(room_id) = room_id {
-        if room_id.0.as_ref().contains(":") {
-            return Err(StatusCode::BAD_REQUEST);
-        }
+    if let Some(room_id) = room_id
+        && room_id.0.as_ref().contains(":")
+    {
+        return Err(StatusCode::BAD_REQUEST);
     }
 
     let authorization_header = req

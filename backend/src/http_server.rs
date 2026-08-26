@@ -11,13 +11,13 @@
 
 use std::{net::SocketAddr, str, sync::Arc};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use axum::{
-    http::StatusCode, middleware, response::IntoResponse, routing::get, Extension, Json, Router,
+    Extension, Json, Router, http::StatusCode, middleware, response::IntoResponse, routing::get,
 };
 use axum_extra::{
-    headers::{self, authorization::Basic, Authorization},
     TypedHeader,
+    headers::{self, Authorization, authorization::Basic},
 };
 use calling_common::{CallType, DemuxId, SignalUserAgent, SystemTime};
 use hex::{FromHex, ToHex};
@@ -138,11 +138,14 @@ fn authenticate(
     password: &str,
 ) -> Result<(sfu::UserId, sfu::CallId)> {
     let (user_id_str, call_id_hex) = match password.split(':').collect::<Vec<_>>()[..] {
-        ["2", user_id_str, call_id_hex, _timestamp, _permission, _mac_hex]
-            if !user_id_str.is_empty() && !call_id_hex.is_empty() =>
-        {
-            Ok((user_id_str, call_id_hex))
-        }
+        [
+            "2",
+            user_id_str,
+            call_id_hex,
+            _timestamp,
+            _permission,
+            _mac_hex,
+        ] if !user_id_str.is_empty() && !call_id_hex.is_empty() => Ok((user_id_str, call_id_hex)),
         _ => Err(anyhow!("Password not valid")),
     }?;
 

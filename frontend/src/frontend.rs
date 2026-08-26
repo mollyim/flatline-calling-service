@@ -5,8 +5,8 @@
 
 use std::{convert::TryFrom, fmt::Write, net::SocketAddr};
 
-use anyhow::{anyhow, Error, Result};
-use calling_common::{random_hex_string, CallType, DemuxId, RoomId, SignalUserAgent};
+use anyhow::{Error, Result, anyhow};
+use calling_common::{CallType, DemuxId, RoomId, SignalUserAgent, random_hex_string};
 use http::Uri;
 use log::*;
 #[cfg(test)]

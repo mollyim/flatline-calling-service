@@ -6,8 +6,8 @@
 use std::{
     collections::HashSet,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
@@ -267,9 +267,7 @@ macro_rules! event {
 
 #[macro_export]
 macro_rules! metrics {
-    () => {{
-        &$crate::__METRICS
-    }};
+    () => {{ &$crate::__METRICS }};
 }
 
 /// Sample the value produced by the supplied function and produce a histogram.
@@ -289,8 +287,8 @@ mod tests {
         collections::HashMap,
         ops::AddAssign,
         sync::{
-            atomic::{AtomicUsize, Ordering},
             Arc, LazyLock,
+            atomic::{AtomicUsize, Ordering},
         },
         time::{Duration, Instant},
     };

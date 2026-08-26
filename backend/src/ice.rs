@@ -11,10 +11,10 @@ use std::{
 };
 
 use calling_common::{
-    parse_u16, parse_u32, random_base64_string_of_length_32, random_base64_string_of_length_4,
+    parse_u16, parse_u32, random_base64_string_of_length_4, random_base64_string_of_length_32,
     round_up_to_multiple_of,
 };
-use crc::{Crc, CRC_32_ISO_HDLC};
+use crc::{CRC_32_ISO_HDLC, Crc};
 use hmac::{Hmac, KeyInit, Mac};
 use sha1::Sha1;
 use thiserror::Error;
@@ -758,7 +758,7 @@ impl<'a> StunPacket<'a> {
                     had_fingerprint = true;
                 }
                 Ok((attr_id, _)) if had_fingerprint => {
-                    return Err(ParseError::AttributeAfterFingerprint(attr_id))
+                    return Err(ParseError::AttributeAfterFingerprint(attr_id));
                 }
                 Ok((attr_id, _)) => return Err(ParseError::ExpectedFingerprint(attr_id)),
                 Err(e) => return Err(e),
@@ -1623,9 +1623,11 @@ mod tests {
                 .expect("recognized")
                 .expect("sane");
 
-            assert!(ice_packet
-                .verify_integrity(b"000102030405060708090a0b0c0d0e0f")
-                .is_ok());
+            assert!(
+                ice_packet
+                    .verify_integrity(b"000102030405060708090a0b0c0d0e0f")
+                    .is_ok()
+            );
 
             assert!(
                 ice_packet
@@ -1652,9 +1654,11 @@ mod tests {
                 .expect("recognized")
                 .expect("sane");
 
-            assert!(ice_packet
-                .verify_integrity(b"000102030405060708090a0b0c0d0e0f")
-                .is_err());
+            assert!(
+                ice_packet
+                    .verify_integrity(b"000102030405060708090a0b0c0d0e0f")
+                    .is_err()
+            );
         }
 
         #[test]
@@ -1674,9 +1678,11 @@ mod tests {
                 .expect("recognized")
                 .expect("sane");
 
-            assert!(ice_packet
-                .verify_integrity(b"000102030405060708090a0b0c0d0e0f")
-                .is_err());
+            assert!(
+                ice_packet
+                    .verify_integrity(b"000102030405060708090a0b0c0d0e0f")
+                    .is_err()
+            );
         }
     }
 }

@@ -15,8 +15,8 @@ use parking_lot::Mutex;
 use rand::RngExt;
 use thiserror::Error;
 use zkgroup::{
-    groups::{GroupSendEndorsementsResponse, UuidCiphertext},
     EndorsementServerRootKeyPair, RandomnessBytes, Timestamp,
+    groups::{GroupSendEndorsementsResponse, UuidCiphertext},
 };
 
 use crate::sfu::UserId;
@@ -340,10 +340,10 @@ mod tests {
     use calling_common::{Duration, SystemTime};
     use libsignal_core::Aci;
     use zkgroup::{
+        EndorsementPublicKey, EndorsementServerRootKeyPair, RANDOMNESS_LEN, RandomnessBytes,
+        ServerPublicParams, ServerSecretParams, Timestamp, UUID_LEN,
         call_links::CallLinkSecretParams,
         groups::{GroupSendEndorsementsResponse, UuidCiphertext},
-        EndorsementPublicKey, EndorsementServerRootKeyPair, RandomnessBytes, ServerPublicParams,
-        ServerSecretParams, Timestamp, RANDOMNESS_LEN, UUID_LEN,
     };
 
     use crate::{
@@ -406,9 +406,11 @@ mod tests {
             );
 
             expected_keys.insert(epoch + one_day);
-            assert!(issuer
-                .compute_endorsements(MEMBER_CIPHERTEXTS.clone(), epoch)
-                .is_ok());
+            assert!(
+                issuer
+                    .compute_endorsements(MEMBER_CIPHERTEXTS.clone(), epoch)
+                    .is_ok()
+            );
             assert_eq!(
                 issuer
                     .expiration_to_key_cache
@@ -421,9 +423,11 @@ mod tests {
 
             expected_keys.insert(epoch + (2 * one_day));
             for now in nows.into_iter() {
-                assert!(issuer
-                    .compute_endorsements(MEMBER_CIPHERTEXTS.clone(), now)
-                    .is_ok());
+                assert!(
+                    issuer
+                        .compute_endorsements(MEMBER_CIPHERTEXTS.clone(), now)
+                        .is_ok()
+                );
 
                 assert_eq!(
                     issuer
@@ -437,9 +441,11 @@ mod tests {
             }
 
             expected_keys.remove(&(epoch + one_day));
-            assert!(issuer
-                .compute_endorsements(MEMBER_CIPHERTEXTS.clone(), epoch + one_day)
-                .is_ok());
+            assert!(
+                issuer
+                    .compute_endorsements(MEMBER_CIPHERTEXTS.clone(), epoch + one_day)
+                    .is_ok()
+            );
             assert_eq!(
                 issuer
                     .expiration_to_key_cache
@@ -452,9 +458,11 @@ mod tests {
 
             let expirations = (2..10).map(|i| epoch + (i * one_day)).collect::<Vec<_>>();
             for expiration in expirations.into_iter() {
-                assert!(issuer
-                    .compute_endorsements(MEMBER_CIPHERTEXTS.clone(), expiration)
-                    .is_ok());
+                assert!(
+                    issuer
+                        .compute_endorsements(MEMBER_CIPHERTEXTS.clone(), expiration)
+                        .is_ok()
+                );
                 assert_eq!(
                     issuer
                         .expiration_to_key_cache
@@ -520,7 +528,10 @@ mod tests {
                     .compute_endorsements(MEMBER_CIPHERTEXTS.clone(), now)
                     .unwrap()
                     .unwrap();
-                assert_eq!(expected_expiration, expiration,"expect matching expiration, endorsements have randomness injected and won't match");
+                assert_eq!(
+                    expected_expiration, expiration,
+                    "expect matching expiration, endorsements have randomness injected and won't match"
+                );
 
                 let endorsements_response: GroupSendEndorsementsResponse =
                     zkgroup::deserialize(&endorsements).expect("Issued valid serialized response");

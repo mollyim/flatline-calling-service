@@ -9,8 +9,8 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{anyhow, Result};
-use base64::{engine::general_purpose::STANDARD, Engine};
+use anyhow::{Result, anyhow};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use calling_common::RoomId;
 use hex::FromHex;
 use hmac::{Hmac, KeyInit, Mac};
@@ -65,8 +65,14 @@ impl FromStr for GroupAuthToken {
     type Err = anyhow::Error;
 
     fn from_str(password: &str) -> Result<Self, Self::Err> {
-        if let [version, user_id, group_id, time_unix_secs, user_permission, mac_digest_hex] =
-            password.split(':').collect::<Vec<_>>()[..]
+        if let [
+            version,
+            user_id,
+            group_id,
+            time_unix_secs,
+            user_permission,
+            mac_digest_hex,
+        ] = password.split(':').collect::<Vec<_>>()[..]
         {
             if version != "2" {
                 return Err(anyhow!("unsupported signature"));
@@ -292,10 +298,12 @@ mod authenticator_tests {
         assert!(Authenticator::parse_authorization_header("Basic //3//Q==").is_err());
 
         // Utf8Error: invalid utf-8 sequence of 1 bytes from index 8
-        assert!(Authenticator::parse_authorization_header(
-            "Basic MTIzNDU2Nzj95v3n/ej96f3q/ev97P3t/e797w=="
-        )
-        .is_err());
+        assert!(
+            Authenticator::parse_authorization_header(
+                "Basic MTIzNDU2Nzj95v3n/ej96f3q/ev97P3t/e797w=="
+            )
+            .is_err()
+        );
 
         let result = Authenticator::parse_authorization_header("Basic VGVzdA==");
         assert!(result.is_err());

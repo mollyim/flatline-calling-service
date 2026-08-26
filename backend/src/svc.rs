@@ -23,12 +23,11 @@ use crate::{
     call::RtpToSend,
     rtp,
     rtp::{
-        expand_frame_number, ActiveDecodeTargetsBitmask, DependencyDescriptor, Dti,
-        ExtendedDescriptorFields, FrameDependencyDefinition, FullFrameNumber, FullSequenceNumber,
-        MandatoryDescriptorFields, Resolution, RtpStreamAllocation, TemplateDependencyStructure,
+        ActiveDecodeTargetsBitmask, DependencyDescriptor, Dti, ExtendedDescriptorFields,
+        FrameDependencyDefinition, FullFrameNumber, FullSequenceNumber, MandatoryDescriptorFields,
+        Resolution, RtpStreamAllocation, TemplateDependencyStructure, expand_frame_number,
     },
     svc::{
-        frame_tracker::{FrameTracker, PacketInfo},
         ScalableVideoError::{
             ActiveDecodeTargetsBitmaskNotAvailable, DecodeTargetChainIndicesNotAvailable,
             DependencyDescriptorNotAvailable, DependencyStructureNotAvailable,
@@ -36,6 +35,7 @@ use crate::{
             InvalidDemuxId, InvalidFrameDependencyTemplateId, ResolutionsNotAvailable,
             VideoLayerAllocationNotAvailable,
         },
+        frame_tracker::{FrameTracker, PacketInfo},
     },
 };
 
@@ -581,8 +581,7 @@ impl ScalableVideoReceiver {
             self.stats.inc_decode_target_switch();
             trace!(
                 "svc: {:?}: decode target switch: {:?}",
-                self.demux_id,
-                self.active_decode_target,
+                self.demux_id, self.active_decode_target,
             );
         }
     }
@@ -926,12 +925,11 @@ impl ScalableVideoSender {
             .video_layers_allocation
             .as_ref()
             .and_then(|vla| vla.first())
+            && *vla != self.video_layer_allocation
         {
-            if *vla != self.video_layer_allocation {
-                trace!("svc: vla: {vla:?}");
-                self.video_layer_allocation = vla.clone();
-                return true;
-            }
+            trace!("svc: vla: {vla:?}");
+            self.video_layer_allocation = vla.clone();
+            return true;
         }
         false
     }

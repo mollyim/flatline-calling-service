@@ -239,16 +239,17 @@ impl Pacer {
 
     pub fn queue_delay(&self, now: Instant) -> Option<Duration> {
         // padding ssrc is Some and padding rate is non-zero when there is video available to forward
-        if self.config.padding_ssrc.is_some() && self.config.padding_send_rate > DataRate::ZERO {
-            if let Some(next_send) = self.calculate_next_media_send_time(now) {
-                // Ignore RTX queue, due to complexity
-                if let Some(media) = self.video_queue.iter().next() {
-                    if let Some(entry_time) = media.entry_time() {
-                        return Some(next_send.saturating_duration_since(entry_time));
-                    }
-                } else {
-                    return Some(now.saturating_duration_since(next_send));
+        if self.config.padding_ssrc.is_some()
+            && self.config.padding_send_rate > DataRate::ZERO
+            && let Some(next_send) = self.calculate_next_media_send_time(now)
+        {
+            // Ignore RTX queue, due to complexity
+            if let Some(media) = self.video_queue.iter().next() {
+                if let Some(entry_time) = media.entry_time() {
+                    return Some(next_send.saturating_duration_since(entry_time));
                 }
+            } else {
+                return Some(now.saturating_duration_since(next_send));
             }
         }
         None
@@ -315,14 +316,12 @@ impl Pacer {
         if let Some(padding_ssrc) = self.config.padding_ssrc {
             let next_padding_send_time = self.calculate_next_padding_send_time(now);
             if Self::past_send_time(next_padding_send_time, now) {
-                if was_empty {
-                    if let Some(next_send) = next_padding_send_time {
-                        let dequeue_delay = now.saturating_duration_since(next_send).as_micros();
-                        if let Ok(dequeue_delay) = dequeue_delay.try_into() {
-                            sampling_histogram!("calling.pacer.dequeue_delay_us.padding", || {
-                                dequeue_delay
-                            });
-                        }
+                if was_empty && let Some(next_send) = next_padding_send_time {
+                    let dequeue_delay = now.saturating_duration_since(next_send).as_micros();
+                    if let Ok(dequeue_delay) = dequeue_delay.try_into() {
+                        sampling_histogram!("calling.pacer.dequeue_delay_us.padding", || {
+                            dequeue_delay
+                        });
                     }
                 }
                 if let Some(padding) = generate_padding(padding_ssrc) {

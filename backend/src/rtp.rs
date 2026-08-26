@@ -16,12 +16,12 @@ mod types;
 
 use std::{collections::HashMap, convert::TryInto};
 
-use calling_common::{expand_truncated_counter, read_u16, Bits, Duration, Instant, Writer};
+use calling_common::{Bits, Duration, Instant, Writer, expand_truncated_counter, read_u16};
 pub use dependency_descriptor::*;
 use log::*;
 use metrics::*;
 use nack::*;
-pub use nack::{write_nack, Nack};
+pub use nack::{Nack, write_nack};
 use packet::*;
 pub use packet::{Header, Packet, RtpStreamAllocation, SpatialLayer};
 use rtcp::*;
@@ -29,9 +29,9 @@ pub use rtcp::{ControlPacket, KeyFrameRequest};
 pub use rtx::to_rtx_ssrc;
 use rtx::*;
 use srtp::*;
+pub use srtp::{KeyAndSalt, KeysAndSalts, MasterKeyMaterial, new_master_key_material};
 #[cfg(test)]
 pub use srtp::{key_from, new_srtp_keys, salt_from};
-pub use srtp::{new_master_key_material, KeyAndSalt, KeysAndSalts, MasterKeyMaterial};
 pub use types::*;
 
 use crate::transportcc as tcc;
@@ -282,16 +282,17 @@ impl Endpoint {
             });
         match seqnum_reuse_detector.remember_used(seqnum_in_header) {
             SequenceNumberReuse::UsedBefore => {
-                trace!("Dropping SRTP packet because we've already seen this seqnum ({}) from this ssrc ({})", seqnum_in_header, header.ssrc);
+                trace!(
+                    "Dropping SRTP packet because we've already seen this seqnum ({}) from this ssrc ({})",
+                    seqnum_in_header, header.ssrc
+                );
                 event!("calling.srtp.seqnum_drop.reused");
                 return None;
             }
             SequenceNumberReuse::TooOldToKnow { delta } => {
                 trace!(
                     "Dropping SRTP packet because it's such an old seqnum ({}) from this ssrc ({}), delta: {}",
-                    seqnum_in_header,
-                    header.ssrc,
-                    delta
+                    seqnum_in_header, header.ssrc, delta
                 );
                 event!("calling.srtp.seqnum_drop.old");
                 return None;
@@ -366,18 +367,17 @@ impl Endpoint {
                 .remember_used(original_seqnum)
             {
                 SequenceNumberReuse::UsedBefore => {
-                    trace!("Dropping SRTP packet because we've already seen this seqnum ({}) from this ssrc ({}) RTXed as {} {}", original_seqnum, original_ssrc, seqnum_in_header, header.ssrc);
+                    trace!(
+                        "Dropping SRTP packet because we've already seen this seqnum ({}) from this ssrc ({}) RTXed as {} {}",
+                        original_seqnum, original_ssrc, seqnum_in_header, header.ssrc
+                    );
                     event!("calling.srtp.seqnum_drop.reused_rtx");
                     true
                 }
                 SequenceNumberReuse::TooOldToKnow { delta } => {
                     trace!(
                         "Dropping SRTP packet because it's such an old seqnum ({}) from this ssrc ({}), delta: {} RTXed as {} {}",
-                        original_seqnum,
-                        original_ssrc,
-                        delta,
-                        seqnum_in_header,
-                        header.ssrc,
+                        original_seqnum, original_ssrc, delta, seqnum_in_header, header.ssrc,
                     );
                     sampling_histogram!("calling.srtp.seqnum_drop.old_rtx", || delta
                         .try_into()
@@ -727,10 +727,10 @@ impl Endpoint {
     }
 
     pub fn get_or_update_stats(&mut self, now: Instant) -> &EndpointStats {
-        if let Some(calculated_time) = self.last_stats_calculated_time {
-            if now.saturating_duration_since(calculated_time) < RTT_ESTIMATE_AGE_LIMIT {
-                return &self.last_stats;
-            }
+        if let Some(calculated_time) = self.last_stats_calculated_time
+            && now.saturating_duration_since(calculated_time) < RTT_ESTIMATE_AGE_LIMIT
+        {
+            return &self.last_stats;
         }
 
         self.update_stats(now)
@@ -767,11 +767,7 @@ impl Endpoint {
             }
         }
 
-        if count != 0 {
-            Some(sum / count)
-        } else {
-            None
-        }
+        if count != 0 { Some(sum / count) } else { None }
     }
 
     /// returns

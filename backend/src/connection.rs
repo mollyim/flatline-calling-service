@@ -813,7 +813,10 @@ impl ConnectionInner {
                             dequeue_time = new_dequeue_time;
                         }
                     } else {
-                        debug!("Ignoring NACK for (SSRC, seqnum) that is either too old or invalid: ({}, {})", ssrc, seqnum);
+                        debug!(
+                            "Ignoring NACK for (SSRC, seqnum) that is either too old or invalid: ({}, {})",
+                            ssrc, seqnum
+                        );
                     }
                 }
             }
@@ -991,11 +994,11 @@ impl ConnectionInner {
         packets_to_send: &mut Vec<(PacketToSend, SocketLocator)>,
         now: Instant,
     ) {
-        if let Some(acks_sent) = self.rtp.acks_sent {
-            if now < acks_sent + ACK_CALCULATION_INTERVAL {
-                // We sent ACKs recently. Wait to resend/recalculate them.
-                return;
-            }
+        if let Some(acks_sent) = self.rtp.acks_sent
+            && now < acks_sent + ACK_CALCULATION_INTERVAL
+        {
+            // We sent ACKs recently. Wait to resend/recalculate them.
+            return;
         }
 
         let rtp_endpoint = &mut self.rtp.endpoint;
@@ -1022,11 +1025,11 @@ impl ConnectionInner {
         // allow the client some time to queue/pace the RTX
         const RTT_GRACE_MULTIPLIER: f64 = 1.1;
 
-        if let Some(nacks_sent) = self.rtp.nacks_sent {
-            if now < nacks_sent + NACK_CALCULATION_INTERVAL {
-                // We sent NACKs recently. Wait to resend/recalculate them.
-                return;
-            }
+        if let Some(nacks_sent) = self.rtp.nacks_sent
+            && now < nacks_sent + NACK_CALCULATION_INTERVAL
+        {
+            // We sent NACKs recently. Wait to resend/recalculate them.
+            return;
         }
 
         if let Some(outgoing_addr) = self.candidate_selector.outbound_address() {
@@ -1049,11 +1052,11 @@ impl ConnectionInner {
         packets_to_send: &mut Vec<(PacketToSend, SocketLocator)>,
         now: Instant,
     ) {
-        if let Some(rtcp_report_sent) = self.rtp.rtcp_report_sent {
-            if now < rtcp_report_sent + RTCP_REPORT_INTERVAL {
-                // We sent a report recently. Wait to resend/recalculate it.
-                return;
-            }
+        if let Some(rtcp_report_sent) = self.rtp.rtcp_report_sent
+            && now < rtcp_report_sent + RTCP_REPORT_INTERVAL
+        {
+            // We sent a report recently. Wait to resend/recalculate it.
+            return;
         }
 
         if let Some(outgoing_addr) = self.candidate_selector.outbound_address() {
@@ -1093,10 +1096,10 @@ impl ConnectionInner {
         const RTCP_RTT_LAG_THRESHOLD: Duration = Duration::from_millis(250);
 
         let cc_rtt = self.congestion_control.controller.rtt();
-        if let Some(rtcp_rtt) = self.rtp.endpoint.get_or_update_stats(now).rtt_estimate {
-            if cc_rtt.abs_diff(rtcp_rtt) < RTCP_RTT_LAG_THRESHOLD {
-                return rtcp_rtt;
-            }
+        if let Some(rtcp_rtt) = self.rtp.endpoint.get_or_update_stats(now).rtt_estimate
+            && cc_rtt.abs_diff(rtcp_rtt) < RTCP_RTT_LAG_THRESHOLD
+        {
+            return rtcp_rtt;
         }
 
         cc_rtt
@@ -1452,13 +1455,15 @@ mod connection_tests {
             peer_addr: "192.0.2.4:5".parse().unwrap(),
             local_addr: ZERO_ADDR,
         };
-        assert!(connection
-            .handle_ice_binding_request(
-                sender_addr,
-                ice::BindingRequest::from_buffer_without_sanity_check(&request),
-                now,
-            )
-            .is_ok());
+        assert!(
+            connection
+                .handle_ice_binding_request(
+                    sender_addr,
+                    ice::BindingRequest::from_buffer_without_sanity_check(&request),
+                    now,
+                )
+                .is_ok()
+        );
     }
 
     #[test]

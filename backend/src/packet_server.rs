@@ -10,8 +10,8 @@ use std::{
     fmt,
     net::SocketAddr,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
@@ -169,7 +169,7 @@ pub async fn start(
         config.ice_candidate_port,
         config.ice_candidate_port_tcp,
         config.ice_candidate_port_tls,
-         num_threads
+        num_threads
     );
 
     sfu.set_packet_server(Some(packet_handler_state_for_stats));
@@ -262,7 +262,9 @@ fn handle_packet_connected(
                         event!("calling.sfu.error.expected.ice_binding_response_unexpected")
                     }
                     Error::ReceivedResponseWithInvalidTransactionId => {
-                        event!("calling.sfu.error.expected.ice_binding_response_invalid_transaction_id")
+                        event!(
+                            "calling.sfu.error.expected.ice_binding_response_invalid_transaction_id"
+                        )
                     }
                     _ => event!("calling.sfu.error.unexpected_connection_error"),
                 },

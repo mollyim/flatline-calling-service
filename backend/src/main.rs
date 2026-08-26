@@ -8,7 +8,7 @@ extern crate log;
 
 use std::{
     fs::File,
-    sync::{atomic::AtomicBool, Arc, LazyLock},
+    sync::{Arc, LazyLock, atomic::AtomicBool},
 };
 
 use anyhow::Result;
@@ -20,14 +20,14 @@ use clap::Parser;
 use env_logger::Env;
 use rlimit::increase_nofile_limit;
 use rustls::{
-    pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer},
+    ServerConfig,
+    pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject},
     server::NoServerSessionStorage,
     version::TLS13,
-    ServerConfig,
 };
 use tokio::{
     runtime,
-    signal::unix::{signal, SignalKind},
+    signal::unix::{SignalKind, signal},
     sync::{mpsc, oneshot},
 };
 
@@ -91,7 +91,9 @@ pub async fn wait_for_signal(mut canceller: mpsc::Receiver<()>) {
 }
 
 fn main() -> Result<()> {
-    std::env::set_var("RUST_BACKTRACE", "full");
+    unsafe {
+        std::env::set_var("RUST_BACKTRACE", "full");
+    }
 
     // Initialize logging.
     env_logger::Builder::from_env(
@@ -114,7 +116,9 @@ fn main() -> Result<()> {
     {
         match option_env!("RUSTFLAGS") {
             None => {
-                warn!("for optimal performance, build with RUSTFLAGS=\"-C target-cpu=native\" or better");
+                warn!(
+                    "for optimal performance, build with RUSTFLAGS=\"-C target-cpu=native\" or better"
+                );
             }
             Some(rust_flags) => {
                 info!("built with: RUSTFLAGS=\"{}\"", rust_flags);
@@ -160,7 +164,9 @@ fn main() -> Result<()> {
         }
         (true, None, None, None) => None,
         _ => {
-            panic!("For TLS, all values must be set: ice-candidate-port-tls, hostname, certificate-file-path, key-file-path");
+            panic!(
+                "For TLS, all values must be set: ice-candidate-port-tls, hostname, certificate-file-path, key-file-path"
+            );
         }
     };
 

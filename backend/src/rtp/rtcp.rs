@@ -11,17 +11,17 @@ use std::{
 use aes::cipher::KeyInit;
 use aes_gcm::{AeadInOut, Aes128Gcm};
 use calling_common::{
-    parse_u16, parse_u24, parse_u32, parse_u64, round_up_to_multiple_of, CheckedSplitAt, Duration,
-    Instant, Writable, Writer, U24,
+    CheckedSplitAt, Duration, Instant, U24, Writable, Writer, parse_u16, parse_u24, parse_u32,
+    parse_u64, round_up_to_multiple_of,
 };
 use log::*;
 use metrics::event;
 
 use super::{
-    nack::{parse_nack, Nack},
-    srtp::{Iv, Key, Salt, SRTP_AUTH_TAG_LEN, SRTP_IV_LEN},
+    OPUS_PAYLOAD_TYPE, Packet, VERSION, VP8_PAYLOAD_TYPE,
+    nack::{Nack, parse_nack},
+    srtp::{Iv, Key, SRTP_AUTH_TAG_LEN, SRTP_IV_LEN, Salt},
     types::*,
-    Packet, OPUS_PAYLOAD_TYPE, VERSION, VP8_PAYLOAD_TYPE,
 };
 use crate::{rtp::VP9_PAYLOAD_TYPE, transportcc as tcc};
 
@@ -332,11 +332,7 @@ fn rtcp_iv(sender_ssrc: Ssrc, index: u32, salt: &Salt) -> Option<Iv> {
 }
 
 fn is_padded_mask(is_padded: bool) -> u8 {
-    if is_padded {
-        0b00100000
-    } else {
-        0b0
-    }
+    if is_padded { 0b00100000 } else { 0b0 }
 }
 
 // This is almost the same as ControlPacket.

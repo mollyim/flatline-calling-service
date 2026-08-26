@@ -7,7 +7,7 @@
 
 use std::cmp::{max, min};
 
-use calling_common::{exponential_moving_average, DataRate, DataSize, Duration, Instant, Square};
+use calling_common::{DataRate, DataSize, Duration, Instant, Square, exponential_moving_average};
 
 use crate::transportcc::Ack;
 
@@ -285,13 +285,12 @@ impl TargetCalculator {
                         {
                             let mut decreased_rate =
                                 acked_rate * DECREASE_FROM_ACKED_RATE_MULTIPLIER;
-                            if decreased_rate > self.target_send_rate {
-                                if let Some(average_acked_rate_when_overusing) =
+                            if decreased_rate > self.target_send_rate
+                                && let Some(average_acked_rate_when_overusing) =
                                     self.acked_rate_when_overusing.average()
-                                {
-                                    decreased_rate = average_acked_rate_when_overusing
-                                        * DECREASE_FROM_ACKED_RATE_MULTIPLIER;
-                                }
+                            {
+                                decreased_rate = average_acked_rate_when_overusing
+                                    * DECREASE_FROM_ACKED_RATE_MULTIPLIER;
                             }
                             self.acked_rate_when_overusing
                                 .reset_if_sample_out_of_bounds(acked_rate);

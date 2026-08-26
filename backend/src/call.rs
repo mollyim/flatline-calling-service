@@ -13,8 +13,8 @@ use std::{
 
 use bincode::Options;
 use calling_common::{
-    rate_limit, CallType, ClientStatus, DataRate, DataRateTracker, DemuxId, Duration, Instant,
-    PixelSize, RoomId, SignalUserAgent, SystemTime, VideoHeight,
+    CallType, ClientStatus, DataRate, DataRateTracker, DemuxId, Duration, Instant, PixelSize,
+    RoomId, SignalUserAgent, SystemTime, VideoHeight, rate_limit,
 };
 use governor::Quota;
 use hex::ToHex;
@@ -48,19 +48,18 @@ use crate::{
     call::Error::UnknownDemuxId,
     endorsements::{CallEndorsementIssuer, CallSendEndorsements, EndorsementIssuer},
     protos::{
-        device_to_sfu,
+        DeviceToSfu, SfuToDevice, device_to_sfu,
         sfu_to_device::{DeviceJoinedOrLeft, Speaker},
-        DeviceToSfu, SfuToDevice,
     },
     rtp::TemplateDependencyStructure,
     sfu::CallSignalingInfo,
     svc::{
+        DecodeTargetInfoList, DecodeTargetInfoLists, ExtendedPacketInfo, MAX_EXPECTED_CLIENTS,
+        ScalableVideoError, ScalableVideoState, ScalableVideoTickResult,
         allocator::{
             BasicAllocationStrategy, BasicAllocationStrategyResult, DefaultAllocator,
             ThrottledAllocator,
         },
-        DecodeTargetInfoList, DecodeTargetInfoLists, ExtendedPacketInfo, ScalableVideoError,
-        ScalableVideoState, ScalableVideoTickResult, MAX_EXPECTED_CLIENTS,
     },
 };
 
@@ -391,7 +390,8 @@ impl LayerId {
 pub enum Error {
     #[error("received RTP data for server with invalid protobuf")]
     InvalidClientToServerProtobuf,
-    #[error("received RTP packet with unauthorized SSRC.  Authorized DemuxId: {0:?}.  Received DemuxId: {1:?}"
+    #[error(
+        "received RTP packet with unauthorized SSRC.  Authorized DemuxId: {0:?}.  Received DemuxId: {1:?}"
     )]
     UnauthorizedRtpSsrc(DemuxId, DemuxId),
     #[error("received RTP packet without dependency descriptor")]
@@ -1279,11 +1279,11 @@ impl CallInner {
     fn lower_raised_hand(&mut self, demux_id: DemuxId, now: Instant) {
         if let Some(raised_hands) = &mut self.raised_hands {
             // Set raise to false
-            if let Some(index) = raised_hands.iter().position(|x| x.demux_id == demux_id) {
-                if raised_hands[index].raise {
-                    raised_hands[index].raise = false;
-                    self.send_raised_hands_on_next_tick(now);
-                }
+            if let Some(index) = raised_hands.iter().position(|x| x.demux_id == demux_id)
+                && raised_hands[index].raise
+            {
+                raised_hands[index].raise = false;
+                self.send_raised_hands_on_next_tick(now);
             }
         }
     }
@@ -1552,51 +1552,51 @@ impl CallInner {
         let sender_is_admin = sender.is_admin;
         // The client resends this periodically, so we don't want to do anything
         // if it didn't change.
-        if proto.video_request != sender.video_request_proto {
-            if let Some(video_request_proto) = proto.video_request {
-                sender.requested_height_by_demux_id = video_request_proto
-                    .requests
-                    .iter()
-                    .filter_map(|request| {
-                        let raw_height = request.height?;
-                        let height = VideoHeight::from(raw_height as u16);
+        if proto.video_request != sender.video_request_proto
+            && let Some(video_request_proto) = proto.video_request
+        {
+            sender.requested_height_by_demux_id = video_request_proto
+                .requests
+                .iter()
+                .filter_map(|request| {
+                    let raw_height = request.height?;
+                    let height = VideoHeight::from(raw_height as u16);
 
-                        if let Some(raw_demux_id) = request.demux_id {
-                            let demux_id = DemuxId::try_from(raw_demux_id).ok()?;
-                            Some((demux_id, height))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                if let Some(scalable_video_state) = sender.scalable_video_state.as_mut() {
-                    if let Some(target_rate) = video_request_proto.max_kbps {
-                        scalable_video_state
-                            .set_requested_target_rate(DataRate::from_kbps(target_rate as u64));
+                    if let Some(raw_demux_id) = request.demux_id {
+                        let demux_id = DemuxId::try_from(raw_demux_id).ok()?;
+                        Some((demux_id, height))
+                    } else {
+                        None
                     }
-                    sender.video_request_proto = Some(video_request_proto);
-                } else {
-                    sender.requested_max_send_rate = video_request_proto
-                        .max_kbps
-                        .map(|kbps| DataRate::from_kbps(kbps as u64))
-                        .unwrap_or(default_requested_max_send_rate);
-                    sender.active_speaker_height = video_request_proto
-                        .active_speaker_height
-                        .map(|height| height as u16)
-                        .unwrap_or(0)
-                        .into();
-                    sender.video_request_proto = Some(video_request_proto);
-                    // We reallocate immediately to make a more pleasant expereience for the user
-                    // (no extra delay for selecting a higher resolution or requesting a new max send rate)
-                    let target_send_rate = sender.target_send_rate;
-                    let min_target_send_rate = sender.min_target_send_rate();
-                    self.allocate_video_layers(
-                        sender_demux_id,
-                        target_send_rate,
-                        min_target_send_rate,
-                        now,
-                    );
+                })
+                .collect();
+            if let Some(scalable_video_state) = sender.scalable_video_state.as_mut() {
+                if let Some(target_rate) = video_request_proto.max_kbps {
+                    scalable_video_state
+                        .set_requested_target_rate(DataRate::from_kbps(target_rate as u64));
                 }
+                sender.video_request_proto = Some(video_request_proto);
+            } else {
+                sender.requested_max_send_rate = video_request_proto
+                    .max_kbps
+                    .map(|kbps| DataRate::from_kbps(kbps as u64))
+                    .unwrap_or(default_requested_max_send_rate);
+                sender.active_speaker_height = video_request_proto
+                    .active_speaker_height
+                    .map(|height| height as u16)
+                    .unwrap_or(0)
+                    .into();
+                sender.video_request_proto = Some(video_request_proto);
+                // We reallocate immediately to make a more pleasant expereience for the user
+                // (no extra delay for selecting a higher resolution or requesting a new max send rate)
+                let target_send_rate = sender.target_send_rate;
+                let min_target_send_rate = sender.min_target_send_rate();
+                self.allocate_video_layers(
+                    sender_demux_id,
+                    target_send_rate,
+                    min_target_send_rate,
+                    now,
+                );
             }
         }
 
@@ -1687,10 +1687,10 @@ impl CallInner {
             ));
         }
         let incoming_rtp = incoming_rtp.borrow();
-        if let Some(audio_level) = incoming_rtp.audio_level {
-            if sender.handle_audio_level(audio_level, now) {
-                return Ok(vec![]);
-            }
+        if let Some(audio_level) = incoming_rtp.audio_level
+            && sender.handle_audio_level(audio_level, now)
+        {
+            return Ok(vec![]);
         }
         let layer_id = LayerId::from_ssrc(incoming_rtp.ssrc()).ok_or(Error::InvalidRtpLayerId)?;
         time_scope_us!("calling.call.handle_rtp.forwarding");
@@ -2152,10 +2152,10 @@ impl CallInner {
     ) -> Vec<(DemuxId, rtp::KeyFrameRequest)> {
         for key_frame_request in key_frame_requests {
             let video_sender_demux_id = DemuxId::from_ssrc(key_frame_request.ssrc);
-            if let Some(client) = self.find_client_mut(video_sender_demux_id) {
-                if let Some(scalable_video_state) = client.scalable_video_state.as_mut() {
-                    scalable_video_state.set_needs_keyframe_immediately();
-                }
+            if let Some(client) = self.find_client_mut(video_sender_demux_id)
+                && let Some(scalable_video_state) = client.scalable_video_state.as_mut()
+            {
+                scalable_video_state.set_needs_keyframe_immediately();
             }
         }
 
@@ -2397,46 +2397,46 @@ impl CallInner {
         rtp_to_send: &mut Vec<RtpToSend>,
         now: Instant,
     ) {
-        if now >= self.raised_hands_sent + RAISED_HANDS_MESSAGE_INTERVAL {
-            if let Some(raised_hands) = &self.raised_hands {
-                // Generate a list of demux ids and seqnums where the raise value is true
-                let (demux_ids, seqnums) = raised_hands
-                    .iter()
-                    .filter(|h| h.raise)
-                    .map(|h| {
-                        (
-                            h.demux_id.as_u32(),
-                            self.raised_hands_seqnums.get(&h.demux_id).unwrap_or(&0),
-                        )
-                    })
-                    .unzip();
+        if now >= self.raised_hands_sent + RAISED_HANDS_MESSAGE_INTERVAL
+            && let Some(raised_hands) = &self.raised_hands
+        {
+            // Generate a list of demux ids and seqnums where the raise value is true
+            let (demux_ids, seqnums) = raised_hands
+                .iter()
+                .filter(|h| h.raise)
+                .map(|h| {
+                    (
+                        h.demux_id.as_u32(),
+                        self.raised_hands_seqnums.get(&h.demux_id).unwrap_or(&0),
+                    )
+                })
+                .unzip();
 
-                let mut update = protos::SfuToDevice {
-                    raised_hands: Some(protos::sfu_to_device::RaisedHands {
-                        demux_ids,
-                        seqnums,
-                        target_seqnum: Some(0),
-                    }),
-                    ..Default::default()
-                };
+            let mut update = protos::SfuToDevice {
+                raised_hands: Some(protos::sfu_to_device::RaisedHands {
+                    demux_ids,
+                    seqnums,
+                    target_seqnum: Some(0),
+                }),
+                ..Default::default()
+            };
 
-                for client in &mut self.clients {
-                    // Set the target_seqnum of the client
-                    let target_seqnum = self
-                        .raised_hands_seqnums
-                        .get(&client.demux_id)
-                        .unwrap_or(&0);
-                    update.raised_hands.as_mut().unwrap().target_seqnum = Some(*target_seqnum);
+            for client in &mut self.clients {
+                // Set the target_seqnum of the client
+                let target_seqnum = self
+                    .raised_hands_seqnums
+                    .get(&client.demux_id)
+                    .unwrap_or(&0);
+                update.raised_hands.as_mut().unwrap().target_seqnum = Some(*target_seqnum);
 
-                    let update_rtp = Self::encode_sfu_to_device_update(
-                        &update,
-                        &mut client.next_server_to_client_data_rtp_seqnum,
-                    );
-                    rtp_to_send.push((client.demux_id, update_rtp))
-                }
-
-                self.raised_hands_sent = now;
+                let update_rtp = Self::encode_sfu_to_device_update(
+                    &update,
+                    &mut client.next_server_to_client_data_rtp_seqnum,
+                );
+                rtp_to_send.push((client.demux_id, update_rtp))
             }
+
+            self.raised_hands_sent = now;
         }
     }
 
@@ -2553,7 +2553,12 @@ impl CallInner {
         };
 
         if let Err(e) = result {
-            error!("Failed to send reliable sfu to device update to demuxId {} with send buffer size of {}: {}", demux_id.as_u32(), stream.send_len(), e);
+            error!(
+                "Failed to send reliable sfu to device update to demuxId {} with send buffer size of {}: {}",
+                demux_id.as_u32(),
+                stream.send_len(),
+                e
+            );
             vec![]
         } else {
             rtp_to_send
@@ -3314,15 +3319,15 @@ impl Client {
                     self.incoming_video[i]
                         .rate_tracker
                         .set_target(layer.max_rate());
-                    if let Some(size) = layer.size {
-                        if self.incoming_video[i].apply_resolution(size, self.video_rotation) {
-                            trace!(
-                                "ssrc {:?} layer {} available (resolution from header)",
-                                DemuxId::from_ssrc(incoming_rtp.ssrc()),
-                                i
-                            );
-                            need_reallocation = true;
-                        }
+                    if let Some(size) = layer.size
+                        && self.incoming_video[i].apply_resolution(size, self.video_rotation)
+                    {
+                        trace!(
+                            "ssrc {:?} layer {} available (resolution from header)",
+                            DemuxId::from_ssrc(incoming_rtp.ssrc()),
+                            i
+                        );
+                        need_reallocation = true;
                     }
                 } else {
                     self.incoming_video[i].rate_tracker.set_target(None);
@@ -3980,9 +3985,7 @@ impl Vp8SimulcastRtpForwarder {
                 let switching_ssrc = self.switching_ssrc().expect("switching_ssrc was not None");
                 trace!(
                     "switch back to SSRC {} to SSRC {} while waiting for key frame for {}.",
-                    desired_incoming_ssrc,
-                    self.outgoing_ssrc,
-                    switching_ssrc
+                    desired_incoming_ssrc, self.outgoing_ssrc, switching_ssrc
                 );
                 if desired_incoming_ssrc > switching_ssrc {
                     event!("calling.forwarding.layer_switch.higher_while_waiting");
@@ -4184,7 +4187,9 @@ mod loggable_call_id_tests {
 
     #[test]
     fn display_call_id_64_long() {
-        let bytes = hex!("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f222122232425262728292a2b2c2d2e2f033132333435363738393a3b3c3d3e3f");
+        let bytes = hex!(
+            "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f222122232425262728292a2b2c2d2e2f033132333435363738393a3b3c3d3e3f"
+        );
         let call_id: LoggableCallId = bytes[..].into();
 
         assert_eq!("000102", format!("{}", call_id));
@@ -4239,7 +4244,7 @@ mod call_tests {
 
     use super::*;
     use crate::{
-        protos::sfu_to_device::{peek_info::PeekDeviceInfo, PeekInfo},
+        protos::sfu_to_device::{PeekInfo, peek_info::PeekDeviceInfo},
         rtp::{
             DependencyDescriptor, ExtendedDescriptorFields, MandatoryDescriptorFields,
             TemplateDependencyStructure, TemplateDependencyStructureFields,
@@ -6279,10 +6284,12 @@ mod call_tests {
         }
 
         let (_rtp_to_send, outgoing_key_frame_requests) = call.tick(at(5100), sys_at(5100));
-        dbg!(call.inner.lock().clients[0].incoming_video[1]
-            .rate()
-            .unwrap()
-            .as_bps());
+        dbg!(
+            call.inner.lock().clients[0].incoming_video[1]
+                .rate()
+                .unwrap()
+                .as_bps()
+        );
         assert_eq!(
             Some(DataRate::from_bps(1043790)),
             call.inner.lock().clients[0].incoming_video[1].rate()

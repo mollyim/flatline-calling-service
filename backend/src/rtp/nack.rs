@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 //
 
-use byteorder::{ReadBytesExt, BE};
+use byteorder::{BE, ReadBytesExt};
 use calling_common::{Bits, Duration, Instant, KeySortedCache, Writer};
 
 use super::{FullSequenceNumber, Ssrc, TruncatedSequenceNumber};

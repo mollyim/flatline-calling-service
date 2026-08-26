@@ -12,7 +12,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use calling_common::PixelSize;
 use smallvec::SmallVec;
 
@@ -952,9 +952,9 @@ mod tests {
     use calling_common::PixelSize;
 
     use crate::rtp::{
-        dependency_descriptor::DependencyDescriptor, ActiveDecodeTargetsBitmask, Dti,
-        ExtendedDescriptorFields, FrameDependencyDefinition, Layer, MandatoryDescriptorFields,
-        Template, TemplateDependencyStructure, TemplateDependencyStructureFields,
+        ActiveDecodeTargetsBitmask, Dti, ExtendedDescriptorFields, FrameDependencyDefinition,
+        Layer, MandatoryDescriptorFields, Template, TemplateDependencyStructure,
+        TemplateDependencyStructureFields, dependency_descriptor::DependencyDescriptor,
     };
 
     #[test]

@@ -5,7 +5,7 @@
 
 use std::{collections::HashMap, net::Ipv4Addr};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use log::*;
 use rand::RngExt;
 use reqwest::StatusCode;
@@ -103,10 +103,10 @@ impl LoadBalancerTask {
     }
 
     fn maybe_send_host_list_reply(&mut self) {
-        if self.unchecked_servers == 0 {
-            if let Some(s) = self.host_list_reply.take() {
-                let _ = s.send(Ok(()));
-            }
+        if self.unchecked_servers == 0
+            && let Some(s) = self.host_list_reply.take()
+        {
+            let _ = s.send(Ok(()));
         }
     }
 
@@ -657,9 +657,10 @@ mod tests {
         ip.octets()[3] % 2
     }
     fn odd_up(ip: Ipv4Addr, mut _rx: oneshot::Receiver<()>, tx: LoadBalancerSender) {
-        assert!(tx
-            .try_send(LoadBalancerMessage::HostWeight(ip, odd_ip(ip)))
-            .is_ok());
+        assert!(
+            tx.try_send(LoadBalancerMessage::HostWeight(ip, odd_ip(ip)))
+                .is_ok()
+        );
     }
 
     fn always_down(_ip: Ipv4Addr) -> u8 {
@@ -672,8 +673,9 @@ mod tests {
         (ip.octets()[3] % 128) + 1
     }
     fn weighted(ip: Ipv4Addr, mut _rx: oneshot::Receiver<()>, tx: LoadBalancerSender) {
-        assert!(tx
-            .try_send(LoadBalancerMessage::HostWeight(ip, weight_by_ip(ip)))
-            .is_ok());
+        assert!(
+            tx.try_send(LoadBalancerMessage::HostWeight(ip, weight_by_ip(ip)))
+                .is_ok()
+        );
     }
 }

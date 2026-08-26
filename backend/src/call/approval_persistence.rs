@@ -6,7 +6,7 @@
 use std::{collections::HashSet, time::Duration};
 
 use calling_common::RoomId;
-use futures::{future::BoxFuture, FutureExt, TryFutureExt};
+use futures::{FutureExt, TryFutureExt, future::BoxFuture};
 use log::*;
 use metrics::*;
 use reqwest::{StatusCode, Url};
@@ -189,7 +189,9 @@ impl ApprovedUsers {
                         }
                     },
                     None => {
-                        error!("tokio::JoinHandle reported finished, but now_or_never failed; this should never happen");
+                        error!(
+                            "tokio::JoinHandle reported finished, but now_or_never failed; this should never happen"
+                        );
                         // This would be a bug in tokio; no point in retrying.
                         false
                     }
