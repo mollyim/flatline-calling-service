@@ -262,7 +262,7 @@ async fn authorize(
                         .decode(credential_base64)
                         .map_err(|e| fail_malformed(&e))?;
                     let credential: zkgroup::call_links::CallLinkAuthCredentialPresentation =
-                        bincode::deserialize(&credential_bytes).map_err(|e| fail_malformed(&e))?;
+                        zkgroup::deserialize(&credential_bytes).map_err(|e| fail_malformed(&e))?;
 
                     // We can't verify the credential without the room info, so wait to see how it's used.
                     // Put the presentation in an Arc to satisfy the Clone requirement on the Extension extractor.
@@ -274,7 +274,7 @@ async fn authorize(
                         .decode(credential_base64)
                         .map_err(|e| fail_malformed(&e))?;
                     let credential: zkgroup::call_links::CreateCallLinkCredentialPresentation =
-                        bincode::deserialize(&credential_bytes).map_err(|e| fail_malformed(&e))?;
+                        zkgroup::deserialize(&credential_bytes).map_err(|e| fail_malformed(&e))?;
 
                     // We can't verify the credential without the room info, so wait to see how it's used.
                     // Put the presentation in an Arc to satisfy the Clone requirement on the Extension extractor.

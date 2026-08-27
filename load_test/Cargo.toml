@@ -21,11 +21,11 @@ anyhow = "1.0.104"
 hex = { version = "0.4.3", features = ["serde"] }
 log = "0.4.26"
 env_logger = "0.11.7"
-rand = "0.10.2"
-x25519-dalek = { version = "3.0.0" }
+rand = { workspace = true }
+x25519-dalek = { workspace = true }
 reqwest = { version = "0.12.12", default-features = false, features =["json", "blocking"] }
-hkdf = "0.13.0"
-sha2 = "0.11.0"
+hkdf = { workspace = true }
+sha2 = { workspace = true }
 ctrlc = "3.4.7"
 prost = "0.14.1"
 byteorder = "1.5.0"

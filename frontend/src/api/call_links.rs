@@ -255,7 +255,7 @@ pub fn verify_auth_credential_against_zkparams(
     existing_call_link: &storage::CallLinkState,
     frontend: &Frontend,
 ) -> Result<(), StatusCode> {
-    let call_link_params: CallLinkPublicParams = bincode::deserialize(&existing_call_link.zkparams)
+    let call_link_params: CallLinkPublicParams = zkgroup::deserialize(&existing_call_link.zkparams)
         .map_err(|err| {
             error!("stored zkparams corrupted: {err}");
             StatusCode::INTERNAL_SERVER_ERROR
@@ -618,9 +618,12 @@ pub mod tests {
     use http::{Request, header};
     use mockall::predicate::*;
     use tower::ServiceExt;
-    use zkgroup::call_links::{
-        CallLinkAuthCredentialResponse, CallLinkSecretParams,
-        CreateCallLinkCredentialRequestContext,
+    use zkgroup::{
+        call_links::{
+            CallLinkAuthCredentialResponse, CallLinkSecretParams,
+            CreateCallLinkCredentialRequestContext,
+        },
+        generic_server_params::GenericServerSecretParams,
     };
 
     use super::*;
@@ -689,7 +692,10 @@ pub mod tests {
         Arc::new(Frontend {
             config: &CONFIG,
             authenticator: Authenticator::from_hex_key(AUTH_KEY).unwrap(),
-            zkparams: bincode::deserialize(&STANDARD.decode(ZKPARAMS).unwrap()).unwrap(),
+            zkparams: GenericServerSecretParams::try_from(
+                STANDARD.decode(ZKPARAMS).unwrap().as_slice(),
+            )
+            .unwrap(),
             storage,
             backend: Box::new(MockBackend::new()),
             id_generator: Box::new(FrontendIdGenerator),

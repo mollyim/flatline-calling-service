@@ -454,6 +454,7 @@ pub mod api_server_v2_tests {
     use http::{Request, header};
     use mockall::{Sequence, predicate::*};
     use tower::ServiceExt;
+    use zkgroup::generic_server_params::GenericServerSecretParams;
 
     use super::*;
     use crate::{
@@ -696,7 +697,10 @@ pub mod api_server_v2_tests {
         Arc::new(Frontend {
             config,
             authenticator: Authenticator::from_hex_key(AUTH_KEY).unwrap(),
-            zkparams: bincode::deserialize(&STANDARD.decode(ZKPARAMS).unwrap()).unwrap(),
+            zkparams: GenericServerSecretParams::try_from(
+                STANDARD.decode(ZKPARAMS).unwrap().as_slice(),
+            )
+            .unwrap(),
             storage,
             backend,
             id_generator: Box::new(FrontendIdGenerator),
@@ -713,7 +717,10 @@ pub mod api_server_v2_tests {
         Arc::new(Frontend {
             config,
             authenticator: Authenticator::from_hex_key(AUTH_KEY).unwrap(),
-            zkparams: bincode::deserialize(&STANDARD.decode(ZKPARAMS).unwrap()).unwrap(),
+            zkparams: GenericServerSecretParams::try_from(
+                STANDARD.decode(ZKPARAMS).unwrap().as_slice(),
+            )
+            .unwrap(),
             storage,
             backend,
             id_generator,

@@ -37,6 +37,7 @@ use tokio::{
     signal::unix::{SignalKind, signal},
     sync::{mpsc, oneshot},
 };
+use zkgroup::generic_server_params::GenericServerSecretParams;
 
 // Load the config and treat it as a read-only static value.
 static CONFIG: LazyLock<config::Config> = LazyLock::new(config::Config::parse);
@@ -153,7 +154,8 @@ fn main() -> Result<()> {
 
     // Create frontend entities that might fail.
     let authenticator = Authenticator::from_hex_key(&config.authentication_key)?;
-    let zkparams = bincode::deserialize(&STANDARD.decode(&config.zkparams)?)?;
+    let zkparams =
+        GenericServerSecretParams::try_from(STANDARD.decode(&config.zkparams)?.as_slice())?;
     let identity_fetcher = if config.storage_endpoint.is_some() {
         // Create an identity fetcher with a dummy token path, which isn't used
         // for testing with a storage endpoint and won't be fetched.

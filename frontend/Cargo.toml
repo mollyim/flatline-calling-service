@@ -38,15 +38,15 @@ serde_with = { version = "3.16.1", features = ["base64"] }
 urlencoding = "2.1.3"
 
 # For common and authentication
-rand = "0.10.2"
-sha2 = "0.11.0"
-hmac = "0.13.0"
+rand = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
 subtle = "2.6.1"
 
 # For http client and server
 axum = { version = "0.7.9" }
 axum-extra = { version = "0.9.6", default-features = false, features = ["typed-header", "tracing"] }
-tower = { version = "0.5.2" , features = ["util"]}
+tower = { version = "0.5.2", features = ["util"] }
 reqwest = { version = "0.12.26", default-features = false, features = ["json", "rustls-tls"] }
 mime = "0.3.17"
 http = "1.4.0"
@@ -71,12 +71,12 @@ parking_lot = "0.12.5"
 psutil = { version = "3.3.0", default-features = false, features = ["process"] }
 rlimit = "0.10.2"
 
+bincode = { workspace = true }
 # For the call link credentials
-bincode = "1.3.3"
-zkgroup = { git = "https://github.com/signalapp/libsignal", tag = "v0.99.1" }
+zkgroup = { workspace = true }
 
 [dev-dependencies]
-libsignal-core = { git = "https://github.com/signalapp/libsignal", tag = "v0.99.1" }
+libsignal-core = { workspace = true }
 mockall = "0.15.0"
 
 [features]
