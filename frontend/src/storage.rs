@@ -721,10 +721,8 @@ impl Storage for DynamoDb {
                 )
             })?;
             must_exist = false;
-            condition = concat!(
-                "(adminPasskey = :adminPasskey OR attribute_not_exists(adminPasskey)) AND ",
-                "(zkparams = :zkparams OR attribute_not_exists(zkparams))"
-            );
+
+            condition = "attribute_not_exists(roomId) OR (adminPasskey = :adminPasskey AND zkparams = :zkparams)";
         } else {
             must_exist = true;
             if let Some(epoch) = epoch {
@@ -928,7 +926,9 @@ impl Storage for DynamoDb {
                 AttributeValue::S(CallLinkState::RECORD_TYPE.to_string()),
             )
             .update_expression("SET expiration = :newExpiration, deleteAt = :newDeleteAt")
-            .condition_expression("attribute_exists(recordType)")
+            .condition_expression(format!(
+                "attribute_exists({RECORD_TYPE_KEY}) AND attribute_exists({ROOM_ID_KEY})"
+            ))
             .expression_attribute_values(":newExpiration", expiration_attribute_value)
             .expression_attribute_values(":newDeleteAt", delete_at_attribute_value);
         let builder = if let Some(epoch) = epoch {
@@ -1039,11 +1039,7 @@ impl Storage for DynamoDb {
         let request = self
             .client
             .update_item()
-            .set_expression_attribute_values(Some(HashMap::from([(
-                ":room_key".to_string(),
-                room_key.clone(),
-            )])))
-            .condition_expression(format!("{ROOM_ID_KEY} = :room_key"))
+            .condition_expression(format!("attribute_exists({ROOM_ID_KEY})"))
             .table_name(&self.table_name)
             .key(ROOM_ID_KEY, room_key)
             .key(
@@ -2333,6 +2329,38 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn test_update_call_link_invalid_database() -> Result<()> {
+            let storage = bootstrap_storage().await?;
+            let room_id = format!("testing-room-{}", line!());
+            // Missing adminPasskey, zkparams, encryptedName, among others
+            let bad_data = serde_json::json!({
+                ROOM_ID_KEY: {"S": call_link_room_key_str(&room_id)},
+                RECORD_TYPE_KEY: {"S": CallLinkState::RECORD_TYPE},
+            });
+
+            with_db_items(&storage, [bad_data], [], async {
+                let result = storage
+                    .update_call_link(
+                        &RoomId::from(room_id.clone()),
+                        StaticCallLinkEpochGenerator::GENERATED_EPOCH,
+                        CallLinkUpdate {
+                            admin_passkey: vec![1, 2, 3],
+                            restrictions: Some(CallLinkRestrictions::AdminApproval),
+                            encrypted_name: Some(b"abc".to_vec()),
+                            revoked: Some(false),
+                        },
+                        Some(vec![]),
+                    )
+                    .await;
+
+                std::assert_matches!(result, Err(CallLinkUpdateError::AdminPasskeyDidNotMatch));
+
+                Ok(())
+            })
+            .await
+        }
+
+        #[tokio::test]
         async fn test_delete_call_link_present_succeeds_with_epoch() -> Result<()> {
             // Delete call link with an epoch
             test_delete_call_link_present_succeeds(
@@ -2635,6 +2663,35 @@ mod tests {
                 _ => panic!("unexpected error"),
             }
             Ok(())
+        }
+
+        #[tokio::test]
+        async fn test_reset_call_link_expiration_nonexist() -> Result<()> {
+            let storage = bootstrap_storage().await?;
+            let room_id = format!("testing-room-{}", line!());
+            let epoch = StaticCallLinkEpochGenerator::GENERATED_EPOCH;
+
+            let bad_room_id = format!("testing-bad-room-{}", line!());
+
+            with_db_items(
+                &storage,
+                [default_call_link_state_json(&room_id, epoch)],
+                [],
+                async {
+                    let result = storage
+                        .reset_call_link_expiration(
+                            &RoomId::from(bad_room_id),
+                            StaticCallLinkEpochGenerator::GENERATED_EPOCH,
+                            SystemTime::now(),
+                        )
+                        .await;
+
+                    std::assert_matches!(result, Err(CallLinkUpdateError::RoomDoesNotExist));
+
+                    Ok(())
+                },
+            )
+            .await
         }
     }
 }
