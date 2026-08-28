@@ -12,7 +12,6 @@ use axum_extra::{
     headers::{self, Header, HeaderName, HeaderValue},
     typed_header::TypedHeaderRejection,
 };
-use bincode::Options;
 use http::StatusCode;
 use log::*;
 use metrics::event;
@@ -260,13 +259,61 @@ pub fn verify_auth_credential_against_zkparams(
             error!("stored zkparams corrupted: {err}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    auth_credential
-        .verify(current_time(), &frontend.zkparams, &call_link_params)
-        .map_err(|_| {
-            event!("calling.frontend.api.call_links.bad_credential");
-            StatusCode::FORBIDDEN
+    let result = if let Some(old_zkparams) = frontend.old_zkparams.as_ref() {
+        auth_credential.verify_against_appropriate_params(
+            current_time(),
+            old_zkparams,
+            &frontend.zkparams,
+            &call_link_params,
+        )
+    } else {
+        auth_credential.verify(current_time(), &frontend.zkparams, &call_link_params)
+    };
+
+    result.map_err(|_| {
+        event!("calling.frontend.api.call_links.bad_credential");
+        StatusCode::FORBIDDEN
+    })
+}
+
+pub fn verify_create_credential_against_zkparams(
+    room_id: &[u8],
+    create_credential: &Arc<CreateCallLinkCredentialPresentation>,
+    zkparams_for_create: &Option<Vec<u8>>,
+    frontend: &Frontend,
+) -> Result<(), StatusCode> {
+    // Verify the credential against the zkparams provided in the payload.
+    // We're trying to create a room, after all, so we are *establishing* those parameters.
+    // If a room with the same ID already exists, we'll find that out later.
+    let call_link_params: CallLinkPublicParams = zkparams_for_create
+        .as_ref()
+        .and_then(|params| zkgroup::deserialize(params).ok())
+        .ok_or_else(|| {
+            event!("calling.frontend.api.update_call_link.invalid_zkparams");
+            StatusCode::BAD_REQUEST
         })?;
-    Ok(())
+
+    let result = if let Some(old_zkparams) = frontend.old_zkparams.as_ref() {
+        create_credential.verify_against_appropriate_params(
+            room_id,
+            current_time(),
+            old_zkparams,
+            &frontend.zkparams,
+            &call_link_params,
+        )
+    } else {
+        create_credential.verify(
+            room_id,
+            current_time(),
+            &frontend.zkparams,
+            &call_link_params,
+        )
+    };
+
+    result.map_err(|_| {
+        event!("calling.frontend.api.update_call_link.bad_credential");
+        StatusCode::UNAUTHORIZED
+    })
 }
 
 /// Handler for the GET /call-link route.
@@ -342,32 +389,12 @@ pub async fn update_call_link(
         has_create_credential = true;
         zkparams_for_create = update.zkparams.take();
 
-        // Verify the credential against the zkparams provided in the payload.
-        // We're trying to create a room, after all, so we are *establishing* those parameters.
-        // If a room with the same ID already exists, we'll find that out later.
-        let call_link_params: CallLinkPublicParams = zkparams_for_create
-            .as_ref()
-            .and_then(|params| {
-                bincode::DefaultOptions::new()
-                    .with_fixint_encoding()
-                    .deserialize(params)
-                    .ok()
-            })
-            .ok_or_else(|| {
-                event!("calling.frontend.api.update_call_link.invalid_zkparams");
-                StatusCode::BAD_REQUEST
-            })?;
-        create_credential
-            .verify(
-                &room_id_bytes,
-                current_time(),
-                &frontend.zkparams,
-                &call_link_params,
-            )
-            .map_err(|_| {
-                event!("calling.frontend.api.update_call_link.bad_credential");
-                StatusCode::UNAUTHORIZED
-            })?;
+        verify_create_credential_against_zkparams(
+            &room_id_bytes,
+            &create_credential,
+            &zkparams_for_create,
+            &frontend,
+        )?;
 
         // default to AdminApproval when no restrictions are specfied during creation
         let _ = update
@@ -623,7 +650,7 @@ pub mod tests {
             CallLinkAuthCredentialResponse, CallLinkSecretParams,
             CreateCallLinkCredentialRequestContext,
         },
-        generic_server_params::GenericServerSecretParams,
+        generic_server_params::{GenericServerSecretParams, GenericServerSecretParamsStandard},
     };
 
     use super::*;
@@ -637,7 +664,13 @@ pub mod tests {
     };
 
     const AUTH_KEY: &str = "f00f0014fe091de31827e8d686969fad65013238aadd25ef8629eb8a9e5ef69b";
-    const ZKPARAMS: &str = "AMJqvmQRYwEGlm0MSy6QFPIAvgOVsqRASNX1meQyCOYHJFqxO8lITPkow5kmhPrsNbu9JhVfKFwesVSKhdZaqQko3IZlJZMqP7DDw0DgTWpdnYzSt0XBWT50DM1cw1nCUXXBZUiijdaFs+JRlTKdh54M7sf43pFxyMHlS3URH50LOeR8jVQKaUHi1bDP2GR9ZXp3Ot9Fsp0pM4D/vjL5PwoOUuzNNdpIqUSFhKVrtazwuHNn9ecHMsFsN0QPzByiDA8nhKcGpdzyWUvGjEDBvpKkBtqjo8QuXWjyS3jSl2oJ/Z4Fh3o2N1YfD2aWV/K88o+TN2/j2/k+KbaIZgmiWwppLU+SYGwthxdDfZgnbaaGT/vMYX9P5JlUWSuP3xIxDzPzxBEFho67BP0Pvux+0a5nEOEVEpfRSs61MMvwNXEKZtzkO0QFbOrFYrPntyb7ToqNi66OQNyTfl/J7kqFZg2MTm3CKjHTAIvVMFAGCIamsrT9sWXOtuNeMS94xazxDA==";
+    /// These are legacy (v0) params, meant to be used with `verify_against_appropriate_params`
+    static OLD_ZKPARAMS: LazyLock<GenericServerSecretParams> = LazyLock::new(|| {
+        GenericServerSecretParams::try_from(
+            STANDARD.decode("AMJqvmQRYwEGlm0MSy6QFPIAvgOVsqRASNX1meQyCOYHJFqxO8lITPkow5kmhPrsNbu9JhVfKFwesVSKhdZaqQko3IZlJZMqP7DDw0DgTWpdnYzSt0XBWT50DM1cw1nCUXXBZUiijdaFs+JRlTKdh54M7sf43pFxyMHlS3URH50LOeR8jVQKaUHi1bDP2GR9ZXp3Ot9Fsp0pM4D/vjL5PwoOUuzNNdpIqUSFhKVrtazwuHNn9ecHMsFsN0QPzByiDA8nhKcGpdzyWUvGjEDBvpKkBtqjo8QuXWjyS3jSl2oJ/Z4Fh3o2N1YfD2aWV/K88o+TN2/j2/k+KbaIZgmiWwppLU+SYGwthxdDfZgnbaaGT/vMYX9P5JlUWSuP3xIxDzPzxBEFho67BP0Pvux+0a5nEOEVEpfRSs61MMvwNXEKZtzkO0QFbOrFYrPntyb7ToqNi66OQNyTfl/J7kqFZg2MTm3CKjHTAIvVMFAGCIamsrT9sWXOtuNeMS94xazxDA==").unwrap().as_slice(),
+        )
+            .unwrap()
+    });
 
     pub const USER_ID_1: &str = "11111111111111111111111111111111";
     pub const USER_ID_1_DOUBLE_ENCODED: &str = "00b033dec3c913aa7d087a49be7bbf4115cd441453778a73d5c705f3515d500841b867748697709fe3f587f796d6c9b20104a27cd1250af6b330fc0dd4eda07005";
@@ -677,6 +710,10 @@ pub mod tests {
     static CALL_LINK_SECRET_PARAMS: LazyLock<CallLinkSecretParams> =
         LazyLock::new(|| CallLinkSecretParams::derive_from_root_key(b"testing"));
 
+    /// The standard (v1) counterpart to [`OLD_ZKPARAMS`], for testing rotation.
+    static NEW_ZKPARAMS: LazyLock<GenericServerSecretParams> =
+        LazyLock::new(|| GenericServerSecretParamsStandard::generate([0x42; 32]).into());
+
     fn initialize_logging() {
         let _ = env_logger::Builder::from_env(
             env_logger::Env::default()
@@ -692,10 +729,21 @@ pub mod tests {
         Arc::new(Frontend {
             config: &CONFIG,
             authenticator: Authenticator::from_hex_key(AUTH_KEY).unwrap(),
-            zkparams: GenericServerSecretParams::try_from(
-                STANDARD.decode(ZKPARAMS).unwrap().as_slice(),
-            )
-            .unwrap(),
+            zkparams: NEW_ZKPARAMS.clone(),
+            old_zkparams: None,
+            storage,
+            backend: Box::new(MockBackend::new()),
+            id_generator: Box::new(FrontendIdGenerator),
+            api_metrics: Default::default(),
+        })
+    }
+
+    fn create_frontend_with_rotating_zkparams(storage: Box<MockStorage>) -> Arc<Frontend> {
+        Arc::new(Frontend {
+            config: &CONFIG,
+            authenticator: Authenticator::from_hex_key(AUTH_KEY).unwrap(),
+            zkparams: NEW_ZKPARAMS.clone(),
+            old_zkparams: Some(OLD_ZKPARAMS.clone()),
             storage,
             backend: Box::new(MockBackend::new()),
             id_generator: Box::new(FrontendIdGenerator),
@@ -716,7 +764,14 @@ pub mod tests {
     }
 
     pub fn create_authorization_header_for_user(frontend: &Frontend, user_id: &str) -> String {
-        let public_server_params = frontend.zkparams.get_public_params();
+        create_authorization_header_for_user_with_zkparams(&frontend.zkparams, user_id)
+    }
+
+    fn create_authorization_header_for_user_with_zkparams(
+        zkparams: &GenericServerSecretParams,
+        user_id: &str,
+    ) -> String {
+        let public_server_params = zkparams.get_public_params();
         let user_id = libsignal_core::Aci::from_uuid_bytes(
             FromHex::from_hex(user_id).expect("valid user ID"),
         );
@@ -724,7 +779,7 @@ pub mod tests {
         let credential = CallLinkAuthCredentialResponse::issue_credential(
             user_id,
             redemption_time,
-            &frontend.zkparams,
+            zkparams,
             rand::random(),
         )
         .receive(user_id, redemption_time, &public_server_params)
@@ -743,7 +798,14 @@ pub mod tests {
     }
 
     pub fn create_authorization_header_for_creator(frontend: &Frontend, user_id: &str) -> String {
-        let public_server_params = frontend.zkparams.get_public_params();
+        create_authorization_header_for_creator_with_zkparams(&frontend.zkparams, user_id)
+    }
+
+    fn create_authorization_header_for_creator_with_zkparams(
+        zkparams: &GenericServerSecretParams,
+        user_id: &str,
+    ) -> String {
+        let public_server_params = zkparams.get_public_params();
         let user_id = libsignal_core::Aci::from_uuid_bytes(
             FromHex::from_hex(user_id).expect("valid user ID"),
         );
@@ -753,7 +815,7 @@ pub mod tests {
         let response = request_context.get_request().issue(
             user_id,
             start_of_today(),
-            &frontend.zkparams,
+            zkparams,
             rand::random(),
         );
 
@@ -924,6 +986,42 @@ pub mod tests {
         // Submit the request.
         let response = app.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn test_get_success_with_old_and_new_zkparams() {
+        // Create mocked dependencies with expectations.
+        let mut storage = Box::new(MockStorage::new());
+        storage
+            .expect_get_call_link()
+            .with(eq(calling_common::RoomId::from(ROOM_ID)), eq(None))
+            .times(2)
+            .returning(|_, _| Ok(Some(default_call_link_state())));
+        let frontend = create_frontend_with_rotating_zkparams(storage);
+
+        let authorization_headers = [
+            create_authorization_header_for_user_with_zkparams(&OLD_ZKPARAMS, USER_ID_1),
+            create_authorization_header_for_user_with_zkparams(&frontend.zkparams, USER_ID_2),
+        ];
+
+        for authorization_header in authorization_headers {
+            // Create an axum application.
+            let app = app(frontend.clone());
+
+            // Create the request.
+            let request = Request::builder()
+                .method(http::Method::GET)
+                .uri("/v1/call-link".to_string())
+                .header(X_ROOM_ID, ROOM_ID)
+                .header(header::USER_AGENT, "test/user/agent")
+                .header(header::AUTHORIZATION, authorization_header)
+                .body(Body::empty())
+                .unwrap();
+
+            // Submit the request.
+            let response = app.oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
     }
 
     #[tokio::test]
@@ -1422,6 +1520,65 @@ pub mod tests {
                 "delete_at": DISTANT_FUTURE_DELETE_AT_IN_EPOCH_SECONDS,
             })
         );
+    }
+
+    #[tokio::test]
+    async fn test_create_success_with_old_and_new_zkparams() {
+        // Create mocked dependencies with expectations.
+        let mut storage = Box::new(MockStorage::new());
+        storage.expect_update_call_link().times(2).returning(
+            |room_id, epoch, new_attributes, zkparams_for_creation| {
+                // Epoch will be randomly generated.
+                assert_eq!(room_id.as_ref(), ROOM_ID);
+                assert_eq!(epoch, None);
+                assert_eq!(
+                    new_attributes,
+                    storage::CallLinkUpdate {
+                        admin_passkey: ADMIN_PASSKEY.into(),
+                        restrictions: Some(CallLinkRestrictions::AdminApproval),
+                        encrypted_name: None,
+                        revoked: None,
+                    }
+                );
+                assert!(zkparams_for_creation.is_some());
+                Ok(default_call_link_state_with_epoch())
+            },
+        );
+        let frontend = create_frontend_with_rotating_zkparams(storage);
+
+        let authorization_headers = [
+            create_authorization_header_for_creator_with_zkparams(&OLD_ZKPARAMS, USER_ID_1),
+            create_authorization_header_for_creator_with_zkparams(&NEW_ZKPARAMS, USER_ID_2),
+        ];
+
+        for authorization_header in authorization_headers {
+            // Create an axum application.
+            let app = app(frontend.clone());
+
+            // Create the request.
+            let request = Request::builder()
+                .method(http::Method::PUT)
+                .uri("/v1/call-link".to_string())
+                .header(X_ROOM_ID, ROOM_ID)
+                .header(header::USER_AGENT, "test/user/agent")
+                .header(header::AUTHORIZATION, authorization_header)
+                .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "adminPasskey": STANDARD.encode(ADMIN_PASSKEY),
+                        "zkparams": STANDARD.encode(
+                            bincode::serialize(&CALL_LINK_SECRET_PARAMS.get_public_params())
+                                .unwrap(),
+                        )
+                    }))
+                    .unwrap(),
+                ))
+                .unwrap();
+
+            // Submit the request.
+            let response = app.oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
     }
 
     #[tokio::test]

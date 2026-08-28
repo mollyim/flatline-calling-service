@@ -7,6 +7,8 @@
 #
 #
 
+ZKPARAMS_SECRET_NEW_VERSION=${ZKPARAMS_SECRET_VERSION:-latest}
+
 if [[ -z "${REGION}" ]]; then
   ZONE="$(curl -Ss "http://metadata.google.internal/computeMetadata/v1/instance/zone" -H "Metadata-Flavor: Google")"
   REGION=$(echo "$ZONE" | awk -F/ '{ print $NF }' | awk -F- '{OFS="-"; NF--; print $0}')
@@ -24,7 +26,7 @@ if [[ -z "${CALLING_AUTH_KEY}" ]]; then
   if [[ -z "${AUTH_SECRET_NAME}" ]]; then
     echo "Error: AUTH_SECRET_NAME not defined but needed to get calling-auth-key!"
     exit 1
-  fi 
+  fi
   if [[ -z "${ZKPARAMS_SECRET_NAME}" ]]; then
     echo "Error: ZKPARAMS_SECRET_NAME not defined but needed to get calling-zkparams!"
     exit 1
@@ -40,11 +42,18 @@ if [[ -z "${CALLING_AUTH_KEY}" ]]; then
   fi
 
   # zkparams are expected to be base64, so we don't have to decode them.
-  ZKPARAMS="$(curl -Ss "https://secretmanager.googleapis.com/v1/projects/$SECRET_PROJECT/secrets/$ZKPARAMS_SECRET_NAME/versions/latest:access" -H "Metadata-Flavor: Google" -H "authorization: Bearer $TOKEN" | jq -r '.payload.data')"
+  ZKPARAMS="$(curl -Ss "https://secretmanager.googleapis.com/v1/projects/$SECRET_PROJECT/secrets/$ZKPARAMS_SECRET_NAME/versions/${ZKPARAMS_SECRET_NEW_VERSION}:access" -H "Metadata-Flavor: Google" -H "authorization: Bearer $TOKEN" | jq -r '.payload.data')"
+  if [[ -n "${ZKPARAMS_SECRET_OLD_VERSION}" ]]; then
+    OLD_ZKPARAMS="$(curl -Ss "https://secretmanager.googleapis.com/v1/projects/$SECRET_PROJECT/secrets/$ZKPARAMS_SECRET_NAME/versions/${ZKPARAMS_SECRET_OLD_VERSION}:access" -H "Metadata-Flavor: Google" -H "authorization: Bearer $TOKEN" | jq -r '.payload.data')"
+    if [[ -z "${OLD_ZKPARAMS}" || "${OLD_ZKPARAMS}" == "null" ]]; then
+      echo "Error: Failed to retrieve OLD_ZKPARAMS with version '${ZKPARAMS_SECRET_OLD_VERSION}'!"
+      exit 1
+    fi
+  fi
 fi
 
-if [[ -z "${ZKPARAMS}" ]]; then
-  echo "Error: ZKPARAMS not defined!"
+if [[ -z "${ZKPARAMS}" || "${ZKPARAMS}" == "null" ]]; then
+  echo "Error: Failed to retrieve ZKPARAMS with version '${ZKPARAMS_SECRET_NEW_VERSION}'!"
   exit 1
 fi
 
@@ -52,4 +61,5 @@ calling_frontend \
   --region "$REGION" \
   --authentication-key "$CALLING_AUTH_KEY" \
   --zkparams "$ZKPARAMS" \
+  ${OLD_ZKPARAMS:+--old-zkparams "$OLD_ZKPARAMS"} \
   "$@"

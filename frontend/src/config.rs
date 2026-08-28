@@ -41,6 +41,10 @@ pub struct Config {
     #[arg(long)]
     pub zkparams: String,
 
+    /// The authentication key to use when validating zero-knowledge credentials, base64-encoded.
+    #[arg(long)]
+    pub old_zkparams: Option<String>,
+
     /// Deployment version of the frontend. Appears as a tag in metrics and in logging.
     #[arg(long)]
     pub version: String,
@@ -120,7 +124,8 @@ pub fn default_test_config() -> Config {
         identity_token_url: None,
         authentication_key: "f00f0014fe091de31827e8d686969fad65013238aadd25ef8629eb8a9e5ef69b"
             .to_string(),
-        zkparams: "AMJqvmQRYwEGlm0MSy6QFPIAvgOVsqRASNX1meQyCOYHJFqxO8lITPkow5kmhPrsNbu9JhVfKFwesVSKhdZaqQko3IZlJZMqP7DDw0DgTWpdnYzSt0XBWT50DM1cw1nCUXXBZUiijdaFs+JRlTKdh54M7sf43pFxyMHlS3URH50LOeR8jVQKaUHi1bDP2GR9ZXp3Ot9Fsp0pM4D/vjL5PwoOUuzNNdpIqUSFhKVrtazwuHNn9ecHMsFsN0QPzByiDA8nhKcGpdzyWUvGjEDBvpKkBtqjo8QuXWjyS3jSl2oJ/Z4Fh3o2N1YfD2aWV/K88o+TN2/j2/k+KbaIZgmiWwppLU+SYGwthxdDfZgnbaaGT/vMYX9P5JlUWSuP3xIxDzPzxBEFho67BP0Pvux+0a5nEOEVEpfRSs61MMvwNXEKZtzkO0QFbOrFYrPntyb7ToqNi66OQNyTfl/J7kqFZg2MTm3CKjHTAIvVMFAGCIamsrT9sWXOtuNeMS94xazxDA==".to_string(),
+        zkparams: "AXlBGwmvXCuTP0ZgrBR6GgnMINl9TedseinyCpfGAjMGTKG1Z7HcpqepHC4WIiAbfoSGNYoLyb1SXbHz4ZZB5APu+QzF3kYbo56bPgGTpuXmiMak50MsxqaEc003XMDLEMX6+UcrNBCQbjzdAymrDW+2OfE7q6NgdXpDb1hicSAOLbO7gAO8NQy/6FsHby/6UUaSBgxl81YyZfTpYQkplwUIq6j3uQo3OO8eFMogKN8ZYAgOTBlADBukLa4EdbahDMRdufIkxiUHk2oxfvgUyfDsu5rvgO5gXujymmOlrisHjid0+7ryoiR6D1kls9bkgdeJTjF2FxJcqYbXLuu8eguCWNHdt/ILgA8frqrZ2S6AtKEGvSAEuoZNzOQpeHVNB6Nl2FK17oqPnvseNjMMUgOfza18fvI6n0wi2gtupS0N0iiEF4oPKWG+Aot3PxeGen6TTY4oVCom7OUcELmurQEQyAgPyzl9/iFyh7fhHsanL/c97Mjxq6fiU+0GMPiuCw==".to_string(),
+        old_zkparams: None,
         region: "us-west1".to_string(),
         version: "1".to_string(),
         regional_url_template: "".to_string(),

@@ -66,6 +66,7 @@ fn print_config(config: &'static config::Config) {
               None => "Disabled",
           });
     info!("  {:38}{}", "enable_call_link_epochs:", config.enable_call_link_epochs);
+    info!("  {:38}{}", "old_zkparams:", config.old_zkparams.is_some());
 }
 
 /// Waits for a SIGINT or SIGTERM signal and returns. Can be cancelled
@@ -156,6 +157,13 @@ fn main() -> Result<()> {
     let authenticator = Authenticator::from_hex_key(&config.authentication_key)?;
     let zkparams =
         GenericServerSecretParams::try_from(STANDARD.decode(&config.zkparams)?.as_slice())?;
+    let old_zkparams = config
+        .old_zkparams
+        .as_ref()
+        .map(|params| STANDARD.decode(params))
+        .transpose()?
+        .map(|params| GenericServerSecretParams::try_from(params.as_slice()))
+        .transpose()?;
     let identity_fetcher = if config.storage_endpoint.is_some() {
         // Create an identity fetcher with a dummy token path, which isn't used
         // for testing with a storage endpoint and won't be fetched.
@@ -189,6 +197,7 @@ fn main() -> Result<()> {
             config,
             authenticator,
             zkparams,
+            old_zkparams,
             storage: Box::new(storage),
             backend: Box::new(backend),
             id_generator: Box::new(FrontendIdGenerator),
